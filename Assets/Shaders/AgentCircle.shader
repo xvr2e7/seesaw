@@ -2,8 +2,8 @@ Shader "LaminarFlow/AgentCircle"
 {
     Properties
     {
-        _BaseColor ("Color", Color) = (1, 1, 1, 0.8)
-        _Softness ("Edge Softness", Range(0, 0.5)) = 0.1
+        _BaseColor ("Color", Color) = (1, 1, 1, 0.6)
+        _Softness ("Edge Softness", Range(0, 0.5)) = 0.15
     }
     
     SubShader
@@ -11,7 +11,7 @@ Shader "LaminarFlow/AgentCircle"
         Tags 
         { 
             "RenderType" = "Transparent" 
-            "Queue" = "Transparent"
+            "Queue" = "Transparent+10"
             "RenderPipeline" = "UniversalPipeline"
         }
         
@@ -44,8 +44,11 @@ Shader "LaminarFlow/AgentCircle"
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
             
+            UNITY_INSTANCING_BUFFER_START(Props)
+                UNITY_DEFINE_INSTANCED_PROP(float4, _BaseColor)
+            UNITY_INSTANCING_BUFFER_END(Props)
+            
             CBUFFER_START(UnityPerMaterial)
-                float4 _BaseColor;
                 float _Softness;
             CBUFFER_END
             
@@ -66,6 +69,9 @@ Shader "LaminarFlow/AgentCircle"
             {
                 UNITY_SETUP_INSTANCE_ID(input);
                 
+                // Get instanced color
+                float4 baseColor = UNITY_ACCESS_INSTANCED_PROP(Props, _BaseColor);
+                
                 // Calculate distance from center (UV is 0-1, so center is 0.5, 0.5)
                 float2 centered = input.uv - 0.5;
                 float dist = length(centered) * 2.0; // Normalize so edge is at 1.0
@@ -77,7 +83,7 @@ Shader "LaminarFlow/AgentCircle"
                 // Discard pixels outside circle for better performance
                 clip(alpha - 0.01);
                 
-                half4 color = _BaseColor;
+                half4 color = baseColor;
                 color.a *= alpha;
                 
                 return color;

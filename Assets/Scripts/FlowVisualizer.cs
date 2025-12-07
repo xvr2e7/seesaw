@@ -43,7 +43,7 @@ public class FlowVisualizer : MonoBehaviour
     public float hueOffset = 0f;
     
     [Header("Debug")]
-    public bool showDebugInfo = true;
+    public bool showDebugInfo = false;
     
     // Internal references
     private GameObject flowQuadGO;
@@ -58,7 +58,9 @@ public class FlowVisualizer : MonoBehaviour
     // Cached values
     private Vector2 worldSize;
     private Vector2 worldMin;
-    private float cellSize;
+    private Vector2 worldMax;
+    private float cellSizeX;
+    private float cellSizeY;
     private bool isInitialized = false;
     
     // Shader property IDs
@@ -81,6 +83,12 @@ public class FlowVisualizer : MonoBehaviour
             flowSimulation = FindObjectOfType<FlowSimulation>();
         }
         
+        if (flowSimulation == null)
+        {
+            Debug.LogError("[FlowVisualizer] No FlowSimulation found!");
+            return;
+        }
+        
         // Wait for simulation to initialize
         if (flowSimulation.WorldSize == Vector2.zero)
         {
@@ -90,10 +98,16 @@ public class FlowVisualizer : MonoBehaviour
         }
         
         worldSize = flowSimulation.WorldSize;
-        worldMin = -worldSize * 0.5f;
-        cellSize = worldSize.x / gridResolution;
         
-        Debug.Log($"[FlowVisualizer] World size: {worldSize}, Cell size: {cellSize}");
+        // World is centered at origin, so bounds are symmetric
+        worldMin = -worldSize * 0.5f;
+        worldMax = worldSize * 0.5f;
+        
+        // Cell sizes for X and Y (in case aspect ratio differs from 1:1)
+        cellSizeX = worldSize.x / gridResolution;
+        cellSizeY = worldSize.y / gridResolution;
+        
+        Debug.Log($"[FlowVisualizer] World: {worldMin} to {worldMax}, Cell size: ({cellSizeX:F3}, {cellSizeY:F3})");
         
         InitializeTexture();
         CreateOrFindMaterial();
@@ -172,8 +186,8 @@ public class FlowVisualizer : MonoBehaviour
         
         flowQuadRenderer = flowQuadGO.GetComponent<MeshRenderer>();
         
-        // Position the quad - use world space, at Z=1 (behind everything)
-        // The camera is at Z=-10, looking toward +Z, so positive Z is "into" the scene
+        // Position the quad at world center, at Z=1 (behind agents which are at Z=0.1)
+        // The quad's local scale will match the world size exactly
         flowQuadGO.transform.position = new Vector3(0f, 0f, 1f);
         flowQuadGO.transform.rotation = Quaternion.identity;
         flowQuadGO.transform.localScale = new Vector3(worldSize.x, worldSize.y, 1f);
@@ -186,7 +200,7 @@ public class FlowVisualizer : MonoBehaviour
         flowQuadRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         flowQuadRenderer.receiveShadows = false;
         
-        Debug.Log($"[FlowVisualizer] Created flow quad at Z=1, scale={worldSize}");
+        Debug.Log($"[FlowVisualizer] Created flow quad at (0,0,1), scale=({worldSize.x}, {worldSize.y})");
     }
     
     void Update()
@@ -214,19 +228,22 @@ public class FlowVisualizer : MonoBehaviour
         Vector2[] velocities = flowSimulation.Velocities;
         int agentCount = flowSimulation.AgentCount;
         
-        float invCellSize = 1f / cellSize;
-        
         // Accumulate velocities into grid cells with bilinear splatting
         for (int i = 0; i < agentCount; i++)
         {
             Vector2 pos = positions[i];
             Vector2 vel = velocities[i];
             
-            // Convert world position to grid coordinates
-            float gx = (pos.x - worldMin.x) * invCellSize;
-            float gy = (pos.y - worldMin.y) * invCellSize;
+            // Convert world position to normalized grid coordinates (0 to gridResolution)
+            // World goes from worldMin to worldMax
+            // Grid goes from 0 to gridResolution
+            float normalizedX = (pos.x - worldMin.x) / worldSize.x;  // 0 to 1
+            float normalizedY = (pos.y - worldMin.y) / worldSize.y;  // 0 to 1
             
-            // Bilinear interpolation weights
+            float gx = normalizedX * gridResolution;
+            float gy = normalizedY * gridResolution;
+            
+            // Bilinear interpolation indices
             int x0 = Mathf.FloorToInt(gx);
             int y0 = Mathf.FloorToInt(gy);
             int x1 = x0 + 1;
@@ -337,11 +354,12 @@ public class FlowVisualizer : MonoBehaviour
     {
         if (!showDebugInfo) return;
         
-        GUILayout.BeginArea(new Rect(10, 170, 350, 150));
+        GUILayout.BeginArea(new Rect(10, 170, 350, 180));
         GUILayout.Box("Flow Visualizer Debug");
         GUILayout.Label($"Initialized: {isInitialized}");
-        GUILayout.Label($"Grid: {gridResolution}x{gridResolution}, Cell: {cellSize:F2}");
-        GUILayout.Label($"World: {worldSize.x:F0}x{worldSize.y:F0}");
+        GUILayout.Label($"Grid: {gridResolution}x{gridResolution}");
+        GUILayout.Label($"Cell Size: ({cellSizeX:F3}, {cellSizeY:F3})");
+        GUILayout.Label($"World Bounds: ({worldMin.x:F1},{worldMin.y:F1}) to ({worldMax.x:F1},{worldMax.y:F1})");
         GUILayout.Label($"Material: {(flowMaterial != null ? flowMaterial.shader.name : "NULL")}");
         GUILayout.Label($"Quad: {(flowQuadGO != null ? "Created" : "NULL")}");
         
@@ -363,17 +381,22 @@ public class FlowVisualizer : MonoBehaviour
         Vector2 accumVel = Vector2.zero;
         float accumWeight = 0f;
         
-        float invCellSize = 1f / cellSize;
-        int radiusCells = Mathf.CeilToInt(radius * invCellSize);
+        int radiusCellsX = Mathf.CeilToInt(radius / cellSizeX);
+        int radiusCellsY = Mathf.CeilToInt(radius / cellSizeY);
         
-        int cx = Mathf.FloorToInt((worldPos.x - worldMin.x) * invCellSize);
-        int cy = Mathf.FloorToInt((worldPos.y - worldMin.y) * invCellSize);
+        float normalizedX = (worldPos.x - worldMin.x) / worldSize.x;
+        float normalizedY = (worldPos.y - worldMin.y) / worldSize.y;
+        
+        int cx = Mathf.FloorToInt(normalizedX * gridResolution);
+        int cy = Mathf.FloorToInt(normalizedY * gridResolution);
         
         float maxExpectedSpeed = flowSimulation.moveSpeed * 2f;
         
-        for (int dy = -radiusCells; dy <= radiusCells; dy++)
+        int maxRadius = Mathf.Max(radiusCellsX, radiusCellsY);
+        
+        for (int dy = -maxRadius; dy <= maxRadius; dy++)
         {
-            for (int dx = -radiusCells; dx <= radiusCells; dx++)
+            for (int dx = -maxRadius; dx <= maxRadius; dx++)
             {
                 int gx = cx + dx;
                 int gy = cy + dy;
@@ -389,7 +412,11 @@ public class FlowVisualizer : MonoBehaviour
                     (pixel.g - 0.5f) * 2f * maxExpectedSpeed
                 );
                 
-                float dist = Mathf.Sqrt(dx * dx + dy * dy) * cellSize;
+                // Convert cell offset back to world distance
+                float worldDistX = dx * cellSizeX;
+                float worldDistY = dy * cellSizeY;
+                float dist = Mathf.Sqrt(worldDistX * worldDistX + worldDistY * worldDistY);
+                
                 if (dist <= radius)
                 {
                     float weight = 1f - (dist / radius);

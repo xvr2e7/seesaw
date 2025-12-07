@@ -77,6 +77,7 @@ crashlytics-build.properties
 # ETC
 .DS_Store
 
-# Files by external packages
+# External packages
 [Aa]ssets/FronkonGames/*
+[Aa]ssets/AUdio/*
 FronkonGames.meta.

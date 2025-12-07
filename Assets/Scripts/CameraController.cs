@@ -57,12 +57,23 @@ public class CameraController : MonoBehaviour
         // Get world size from simulation
         worldSize = flowSimulation.WorldSize;
         
+        // Ensure worldSize is initialized and valid before proceeding
+        if (worldSize.x <= 0.1f || worldSize.y <= 0.1f) return;
+        
         // Calculate orthographic size based on viewport fraction
         // orthoSize is half the vertical view height
         // We want to see viewportFraction of the world width
         float visibleWidth = worldSize.x * viewportFraction;
         float aspectRatio = (float)Screen.width / Screen.height;
+        
+        // Ensure we don't divide by zero if screen dimensions are weird during init
+        if (aspectRatio <= 0.001f) aspectRatio = 1f;
+
         orthoSize = (visibleWidth / aspectRatio) * 0.5f;
+        
+        // Clamp to a minimum value to prevent frustum errors
+        orthoSize = Mathf.Max(orthoSize, 0.1f);
+        
         cam.orthographicSize = orthoSize;
         
         // Update target position based on mouse

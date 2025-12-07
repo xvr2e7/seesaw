@@ -134,6 +134,7 @@ GameObject:
   - component: {fileID: 1382237305}
   - component: {fileID: 1382237304}
   - component: {fileID: 1382237306}
+  - component: {fileID: 1382237307}
   m_Layer: 0
   m_Name: SimulationManager
   m_TagString: Untagged
@@ -173,7 +174,12 @@ MonoBehaviour:
   agentMaterial: {fileID: 2100000, guid: fd392764eeb787c43b4e43aaf60a7487, type: 2}
   agentSize: 0.3
   renderHeight: 0.1
-  baseColor: {r: 0.9, g: 0.9, b: 0.9, a: 0.8}
+  agentOpacity: 0.6
+  colorByVelocity: 1
+  hueOffset: 0
+  saturation: 0.85
+  brightness: 0.95
+  fallbackColor: {r: 0.9, g: 0.9, b: 0.9, a: 0.6}
 --- !u!114 &1382237305
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -210,12 +216,34 @@ MonoBehaviour:
   temporalSmoothing: 8
   flowMaterial: {fileID: 2100000, guid: 3a3f96550a256e548bf4a0edd1b5d34f, type: 2}
   velocityScale: 1.5
-  saturationMin: 0.4
+  saturationMin: 0.1
   saturationMax: 0.95
-  valueMin: 0.2
+  valueMin: 0.1
   valueMax: 0.9
   hueOffset: 0
   showDebugInfo: 0
+--- !u!114 &1382237307
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1382237302}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d70ed4c13f394474998082e929e51256, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  flowSimulation: {fileID: 1382237305}
+  mainCamera: {fileID: 2057931241}
+  toolRadius: 5
+  baseDampeningStrength: 0.5
+  maxDampeningStrength: 1
+  rampUpTime: 1.5
+  cursorIdleColor: {r: 0.5, g: 0.8, b: 1, a: 0.3}
+  cursorActiveColor: {r: 0.2, g: 1, b: 0.6, a: 0.6}
+  showDebugInfo: 0
+  showGizmos: 1
 --- !u!1 &1783634599
 GameObject:
   m_ObjectHideFlags: 0
@@ -486,8 +514,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   flowSimulation: {fileID: 1382237305}
   viewportFraction: 0.18
-  followWeight: 1.5
-  edgePadding: 2
+  followSpeed: 3
   showDebugInfo: 0
   cam: {fileID: 2057931241}
 --- !u!1660057539 &9223372036854775807

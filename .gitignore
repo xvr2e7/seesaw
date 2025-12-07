@@ -27,6 +27,7 @@
 
 # VSCode
 .vscode/
+.claude/
 
 # Gradle cache directory
 .gradle/
@@ -78,4 +79,4 @@ crashlytics-build.properties
 
 # Files by external packages
 [Aa]ssets/FronkonGames/*
-FronkonGames.meta
+FronkonGames.meta.

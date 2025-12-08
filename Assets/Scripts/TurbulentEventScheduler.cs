@@ -10,6 +10,8 @@ using System.Collections.Generic;
 /// - "Entropy spike" = panic/flight  
 /// - "Vector divergence" = dispersal
 /// - "Flow obstruction" = protest blocking movement
+/// 
+/// Events are timed to fit within a ~4 minute active window (after initial delay).
 /// </summary>
 public class TurbulentEventScheduler : MonoBehaviour
 {
@@ -25,16 +27,19 @@ public class TurbulentEventScheduler : MonoBehaviour
     
     [Header("Random Event Settings")]
     [Tooltip("Minimum time between random events")]
-    public float minEventInterval = 8f;
+    public float minEventInterval = 6f;
     
     [Tooltip("Maximum time between random events")]
-    public float maxEventInterval = 20f;
+    public float maxEventInterval = 15f;
     
     [Tooltip("Delay before first event")]
-    public float initialDelay = 15f;
+    public float initialDelay = 10f;
     
     [Tooltip("Maximum simultaneous random events")]
     public int maxSimultaneousEvents = 3;
+    
+    [Tooltip("Stop spawning random events after this time")]
+    public float randomEventCutoff = 240f; // 4 minutes
     
     [Header("Event Parameters")]
     [Tooltip("Minimum radius for random events")]
@@ -44,10 +49,10 @@ public class TurbulentEventScheduler : MonoBehaviour
     public float maxRadius = 15f;
     
     [Tooltip("Minimum duration for random events")]
-    public float minDuration = 5f;
+    public float minDuration = 6f;
     
     [Tooltip("Maximum duration for random events")]
-    public float maxDuration = 15f;
+    public float maxDuration = 12f;
     
     [Tooltip("Base strength multiplier")]
     [Range(0.5f, 3f)]
@@ -81,6 +86,14 @@ public class TurbulentEventScheduler : MonoBehaviour
     
     // Event tracking
     private int activeRandomEventCount = 0;
+    private int completedScriptedEvents = 0;
+    private int totalScriptedEvents = 0;
+    
+    // Public accessors
+    public float SimulationTime => simulationTime;
+    public int CompletedScriptedEvents => completedScriptedEvents;
+    public int TotalScriptedEvents => totalScriptedEvents;
+    public bool AllScriptedEventsComplete => completedScriptedEvents >= totalScriptedEvents && totalScriptedEvents > 0;
     
     void Start()
     {
@@ -111,6 +124,8 @@ public class TurbulentEventScheduler : MonoBehaviour
             CreateDefaultEventSequence();
         }
         
+        totalScriptedEvents = scriptedEvents.Count;
+        
         Debug.Log($"[TurbulentEventScheduler] Initialized with {scriptedEvents.Count} scripted events");
     }
     
@@ -134,8 +149,8 @@ public class TurbulentEventScheduler : MonoBehaviour
             UpdateScriptedEvents();
         }
         
-        // Spawn random events
-        if (enableRandomEvents)
+        // Spawn random events (within cutoff time)
+        if (enableRandomEvents && simulationTime < randomEventCutoff)
         {
             UpdateRandomEvents();
         }
@@ -306,113 +321,195 @@ public class TurbulentEventScheduler : MonoBehaviour
     
     void OnEventEnded(TurbulenceEvent evt)
     {
+        // Track scripted event completion
+        if (!evt.eventName.StartsWith("Random") && !evt.eventName.StartsWith("Manual"))
+        {
+            completedScriptedEvents++;
+        }
+        
         if (showDebugInfo)
         {
-            Debug.Log($"[Turbulence] Event ended: {evt.eventName}");
+            Debug.Log($"[Turbulence] Event ended: {evt.eventName} (Scripted complete: {completedScriptedEvents}/{totalScriptedEvents})");
         }
     }
     
     /// <summary>
-    /// Creates a default event sequence for testing
+    /// Creates a default event sequence optimized for ~4 minute gameplay
+    /// Events are spaced to give player response time between them
     /// </summary>
     void CreateDefaultEventSequence()
     {
         Vector2 worldSize = flowSimulation.WorldSize;
         Vector2 halfSize = worldSize * 0.5f;
         
-        // Event 1: Circular gathering at 15 seconds (peaceful assembly)
+        // Event 1: Circular gathering at 10 seconds (peaceful assembly - tutorial)
         scriptedEvents.Add(new TurbulenceEvent
         {
             eventName = "Initial_Assembly",
             pattern = TurbulenceEvent.PatternType.Circular,
             position = new Vector2(halfSize.x * 0.3f, 0f),
-            radius = 12f,
-            innerRadius = 4f,
-            startTime = 15f,
-            duration = 20f,
+            radius = 10f,
+            innerRadius = 3f,
+            startTime = 10f,
+            duration = 15f,
             fadeInTime = 2f,
-            fadeOutTime = 3f,
-            strength = 2.5f,
+            fadeOutTime = 2f,
+            strength = 2f,
             frequency = 0.8f
         });
         
-        // Event 2: Convergence at 25 seconds (crowd gathering)
+        // Event 2: Convergence at 30 seconds (crowd gathering)
         scriptedEvents.Add(new TurbulenceEvent
         {
             eventName = "Gathering_Point",
             pattern = TurbulenceEvent.PatternType.Convergence,
             position = new Vector2(-halfSize.x * 0.4f, halfSize.y * 0.3f),
-            radius = 10f,
-            startTime = 25f,
-            duration = 15f,
+            radius = 12f,
+            startTime = 30f,
+            duration = 12f,
             fadeInTime = 1.5f,
             fadeOutTime = 2f,
-            strength = 3f,
+            strength = 2.5f,
             frequency = 1f
         });
         
-        // Event 3: Vortex at 40 seconds (spiral formation)
+        // Event 3: Vortex at 50 seconds (spiral formation)
         scriptedEvents.Add(new TurbulenceEvent
         {
             eventName = "Spiral_Formation",
             pattern = TurbulenceEvent.PatternType.Vortex,
-            position = new Vector2(0f, -halfSize.y * 0.3f),
-            radius = 15f,
-            startTime = 40f,
-            duration = 18f,
+            position = new Vector2(0f, -halfSize.y * 0.25f),
+            radius = 14f,
+            startTime = 50f,
+            duration = 14f,
             fadeInTime = 2f,
-            fadeOutTime = 2.5f,
-            strength = 2.8f,
+            fadeOutTime = 2f,
+            strength = 2.5f,
             frequency = 1.2f
         });
         
-        // Event 4: Scatter at 60 seconds (panic event)
+        // Event 4: Scatter at 75 seconds (panic event)
         scriptedEvents.Add(new TurbulenceEvent
         {
             eventName = "Panic_Scatter",
             pattern = TurbulenceEvent.PatternType.Scatter,
-            position = new Vector2(halfSize.x * 0.2f, halfSize.y * 0.4f),
-            radius = 14f,
-            startTime = 60f,
-            duration = 12f,
+            position = new Vector2(halfSize.x * 0.2f, halfSize.y * 0.35f),
+            radius = 12f,
+            startTime = 75f,
+            duration = 10f,
             fadeInTime = 0.5f, // Fast onset - sudden panic
-            fadeOutTime = 3f,
-            strength = 4f,
+            fadeOutTime = 2.5f,
+            strength = 3.5f,
             frequency = 2f
         });
         
-        // Event 5: Cluster at 75 seconds (sit-in/blockade)
+        // Event 5: Cluster at 95 seconds (sit-in/blockade)
         scriptedEvents.Add(new TurbulenceEvent
         {
             eventName = "Blockade",
             pattern = TurbulenceEvent.PatternType.Cluster,
-            position = new Vector2(-halfSize.x * 0.2f, -halfSize.y * 0.2f),
+            position = new Vector2(-halfSize.x * 0.15f, -halfSize.y * 0.2f),
             radius = 10f,
-            startTime = 75f,
-            duration = 25f,
+            startTime = 95f,
+            duration = 18f,
             fadeInTime = 3f,
             fadeOutTime = 2f,
             strength = 2f,
             frequency = 0.5f
         });
         
-        // Event 6: Wave at 90 seconds (march)
+        // Event 6: Wave at 120 seconds (march)
         scriptedEvents.Add(new TurbulenceEvent
         {
             eventName = "March_Wave",
             pattern = TurbulenceEvent.PatternType.Wave,
             position = Vector2.zero,
-            radius = 25f,
-            startTime = 90f,
-            duration = 20f,
+            radius = 20f,
+            startTime = 120f,
+            duration = 16f,
             fadeInTime = 2f,
-            fadeOutTime = 3f,
-            strength = 3f,
+            fadeOutTime = 2.5f,
+            strength = 2.8f,
             frequency = 0.7f,
             direction = new Vector2(1f, 0.3f).normalized
         });
         
-        Debug.Log($"[TurbulentEventScheduler] Created {scriptedEvents.Count} default events");
+        // Event 7: Multiple convergences at 145 seconds (simultaneous gatherings)
+        scriptedEvents.Add(new TurbulenceEvent
+        {
+            eventName = "Multi_Gather_A",
+            pattern = TurbulenceEvent.PatternType.Convergence,
+            position = new Vector2(-halfSize.x * 0.35f, -halfSize.y * 0.3f),
+            radius = 8f,
+            startTime = 145f,
+            duration = 12f,
+            fadeInTime = 1.5f,
+            fadeOutTime = 2f,
+            strength = 2.5f,
+            frequency = 1f
+        });
+        
+        scriptedEvents.Add(new TurbulenceEvent
+        {
+            eventName = "Multi_Gather_B",
+            pattern = TurbulenceEvent.PatternType.Circular,
+            position = new Vector2(halfSize.x * 0.35f, halfSize.y * 0.2f),
+            radius = 9f,
+            innerRadius = 3f,
+            startTime = 150f,
+            duration = 12f,
+            fadeInTime = 1.5f,
+            fadeOutTime = 2f,
+            strength = 2.2f,
+            frequency = 0.9f
+        });
+        
+        // Event 8: Large vortex at 175 seconds (major gathering)
+        scriptedEvents.Add(new TurbulenceEvent
+        {
+            eventName = "Major_Vortex",
+            pattern = TurbulenceEvent.PatternType.Vortex,
+            position = new Vector2(halfSize.x * 0.1f, 0f),
+            radius = 18f,
+            startTime = 175f,
+            duration = 15f,
+            fadeInTime = 2.5f,
+            fadeOutTime = 3f,
+            strength = 3f,
+            frequency = 1.0f
+        });
+        
+        // Event 9: Final scatter at 200 seconds (climactic panic)
+        scriptedEvents.Add(new TurbulenceEvent
+        {
+            eventName = "Final_Scatter",
+            pattern = TurbulenceEvent.PatternType.Scatter,
+            position = new Vector2(-halfSize.x * 0.2f, halfSize.y * 0.15f),
+            radius = 15f,
+            startTime = 200f,
+            duration = 12f,
+            fadeInTime = 0.3f,
+            fadeOutTime = 3f,
+            strength = 4f,
+            frequency = 2.5f
+        });
+        
+        // Event 10: Final calm cluster at 220 seconds (aftermath)
+        scriptedEvents.Add(new TurbulenceEvent
+        {
+            eventName = "Aftermath_Cluster",
+            pattern = TurbulenceEvent.PatternType.Cluster,
+            position = Vector2.zero,
+            radius = 12f,
+            startTime = 220f,
+            duration = 20f,
+            fadeInTime = 4f,
+            fadeOutTime = 4f,
+            strength = 1.5f,
+            frequency = 0.3f
+        });
+        
+        Debug.Log($"[TurbulentEventScheduler] Created {scriptedEvents.Count} default events spanning 0-240s");
     }
     
     /// <summary>
@@ -480,6 +577,7 @@ public class TurbulentEventScheduler : MonoBehaviour
         nextRandomEventTime = initialDelay;
         totalEventsSpawned = 0;
         currentDifficulty = 1f;
+        completedScriptedEvents = 0;
         
         // Reset scripted events but keep random ones removed
         for (int i = scriptedEvents.Count - 1; i >= 0; i--)
@@ -494,19 +592,23 @@ public class TurbulentEventScheduler : MonoBehaviour
                 scriptedEvents[i].Reset();
             }
         }
+        
+        totalScriptedEvents = scriptedEvents.Count;
     }
     
     void OnGUI()
     {
         if (!showDebugInfo) return;
         
-        GUILayout.BeginArea(new Rect(320, 10, 300, 250));
+        GUILayout.BeginArea(new Rect(320, 10, 300, 280));
         GUILayout.Box("Turbulence Scheduler");
         GUILayout.Label($"Simulation Time: {simulationTime:F1}s");
         GUILayout.Label($"Difficulty: {currentDifficulty:F2}x");
         GUILayout.Label($"Active Events: {activeEvents.Count}");
         GUILayout.Label($"Total Spawned: {totalEventsSpawned}");
         GUILayout.Label($"Next Random: {nextRandomEventTime - simulationTime:F1}s");
+        GUILayout.Label($"Scripted Complete: {completedScriptedEvents}/{totalScriptedEvents}");
+        GUILayout.Label($"All Scripted Done: {AllScriptedEventsComplete}");
         
         GUILayout.Space(5);
         GUILayout.Label("Active Events:");

@@ -122,6 +122,64 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!1 &1356720804
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1356720805}
+  - component: {fileID: 1356720806}
+  m_Layer: 0
+  m_Name: UIManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1356720805
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1356720804}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1356720806
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1356720804}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 543c088b23fb165448415901e315a6e0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  eventScheduler: {fileID: 0}
+  cameraController: {fileID: 0}
+  flowSimulation: {fileID: 1382237305}
+  mainCamera: {fileID: 2057931241}
+  edgeMargin: 50
+  indicatorSize: 40
+  offScreenColor: {r: 1, g: 0.3, b: 0.2, a: 0.9}
+  onScreenColor: {r: 1, g: 0.8, b: 0.2, a: 0.8}
+  pulseSpeed: 3
+  showDivergenceMeter: 1
+  meterPosition: {x: 20, y: 20}
+  meterSize: {x: 220, y: 24}
+  showInstructions: 1
+  instructionDuration: 12
 --- !u!1 &1382237302
 GameObject:
   m_ObjectHideFlags: 0
@@ -135,6 +193,7 @@ GameObject:
   - component: {fileID: 1382237304}
   - component: {fileID: 1382237306}
   - component: {fileID: 1382237307}
+  - component: {fileID: 1382237308}
   m_Layer: 0
   m_Name: SimulationManager
   m_TagString: Untagged
@@ -198,6 +257,8 @@ MonoBehaviour:
   moveSpeed: 2
   wanderStrength: 1.5
   turnSpeed: 3
+  currentDivergence: 0
+  divergenceSmoothing: 3
   showDebugGizmos: 0
 --- !u!114 &1382237306
 MonoBehaviour:
@@ -237,13 +298,45 @@ MonoBehaviour:
   flowSimulation: {fileID: 1382237305}
   mainCamera: {fileID: 2057931241}
   toolRadius: 5
+  minRadius: 2
+  maxRadius: 25
+  scrollSensitivity: 2
   baseDampeningStrength: 0.5
   maxDampeningStrength: 1
   rampUpTime: 1.5
-  cursorIdleColor: {r: 0.5, g: 0.8, b: 1, a: 0.3}
-  cursorActiveColor: {r: 0.2, g: 1, b: 0.6, a: 0.6}
+  ringColor: {r: 0.9, g: 0.9, b: 0.9, a: 0.8}
+  ringThicknessFraction: 0.03
   showDebugInfo: 0
-  showGizmos: 1
+--- !u!114 &1382237308
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1382237302}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5cec97500d6439a428480fb9fc5f9649, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  flowSimulation: {fileID: 1382237305}
+  useScriptedEvents: 1
+  enableRandomEvents: 1
+  minEventInterval: 8
+  maxEventInterval: 20
+  initialDelay: 15
+  maxSimultaneousEvents: 3
+  minRadius: 5
+  maxRadius: 15
+  minDuration: 5
+  maxDuration: 15
+  strengthMultiplier: 1
+  scaleDifficulty: 1
+  difficultyRamp: 0.02
+  maxDifficultyMultiplier: 2
+  scriptedEvents: []
+  showDebugInfo: 0
+  showEventGizmos: 1
 --- !u!1 &1783634599
 GameObject:
   m_ObjectHideFlags: 0
@@ -362,6 +455,111 @@ MonoBehaviour:
   m_LightCookieSize: {x: 1, y: 1}
   m_LightCookieOffset: {x: 0, y: 0}
   m_SoftShadowQuality: 0
+--- !u!1 &1940927232
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1940927233}
+  - component: {fileID: 1940927234}
+  m_Layer: 0
+  m_Name: Soundscape
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1940927233
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1940927232}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1940927234
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1940927232}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 314d4d4c5a87aa045b9f87289342394e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  flowSimulation: {fileID: 1382237305}
+  eventScheduler: {fileID: 1382237308}
+  ambientLayers:
+  - name: Base Drone
+    clip: {fileID: 8300000, guid: 12120d620d85e4eeca41eccd723e54df, type: 3}
+    baseVolume: 0.4
+    minDivergence: 0
+    maxDivergence: 0
+    volumeCurve:
+      serializedVersion: 2
+      m_Curve: []
+      m_PreInfinity: 0
+      m_PostInfinity: 0
+      m_RotationOrder: 4
+    minPitch: 0
+    maxPitch: 0
+    source: {fileID: 0}
+    currentVolume: 0
+    targetVolume: 0
+  - name: Tension
+    clip: {fileID: 8300000, guid: aff0b1735edb04279b0393344c62f781, type: 3}
+    baseVolume: 0.5
+    minDivergence: 0.2
+    maxDivergence: 1
+    volumeCurve:
+      serializedVersion: 2
+      m_Curve: []
+      m_PreInfinity: 0
+      m_PostInfinity: 0
+      m_RotationOrder: 4
+    minPitch: 0
+    maxPitch: 0
+    source: {fileID: 0}
+    currentVolume: 0
+    targetVolume: 0
+  - name: Critical
+    clip: {fileID: 8300000, guid: 4a947416f14a04f9fb3ac22a1919d3e0, type: 3}
+    baseVolume: 0.6
+    minDivergence: 0.8
+    maxDivergence: 1.5
+    volumeCurve:
+      serializedVersion: 2
+      m_Curve: []
+      m_PreInfinity: 0
+      m_PostInfinity: 0
+      m_RotationOrder: 4
+    minPitch: 0
+    maxPitch: 0
+    source: {fileID: 0}
+    currentVolume: 0
+    targetVolume: 0
+  eventStingerClip: {fileID: 8300000, guid: 3d0761b7d50904afaac90da95443198e, type: 3}
+  stingerVolume: 0.6
+  stingerFadeIn: 0.3
+  stingerFadeOut: 2
+  masterVolume: 0.8
+  fadeSpeed: 1.5
+  divergenceSmoothing: 2
+  enableSpatialHints: 1
+  spatialAmount: 0.15
+  showDebugInfo: 0
 --- !u!1 &2057931239
 GameObject:
   m_ObjectHideFlags: 0
@@ -524,3 +722,5 @@ SceneRoots:
   - {fileID: 2057931242}
   - {fileID: 1783634601}
   - {fileID: 1382237303}
+  - {fileID: 1356720805}
+  - {fileID: 1940927233}

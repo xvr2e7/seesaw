@@ -17,6 +17,14 @@ public class FlowSimulation : MonoBehaviour
     [Range(0f, 10f)]
     public float turnSpeed = 3f;
     
+    [Header("Flow Metrics")]
+    [Tooltip("Current average divergence from mean flow (turbulence indicator)")]
+    [SerializeField] private float currentDivergence = 0f;
+    
+    [Tooltip("Smoothing for divergence calculation")]
+    [Range(0.5f, 10f)]
+    public float divergenceSmoothing = 3f;
+    
     [Header("Debug")]
     public bool showDebugGizmos = true;
     
@@ -27,11 +35,25 @@ public class FlowSimulation : MonoBehaviour
     
     private Vector2 worldSize;
     
+    // Flow metrics
+    private Vector2 meanVelocity;
+    private float velocityVariance;
+    
     public Vector2[] Positions => positions;
     public Vector2[] Velocities => velocities;
     public int AgentCount => agentCount;
     public Vector2 WorldSize => worldSize;
     public Vector2 WorldCenter => Vector2.zero;
+    
+    /// <summary>
+    /// Current divergence metric (0 = perfectly laminar, higher = more turbulent)
+    /// </summary>
+    public float CurrentDivergence => currentDivergence;
+    
+    /// <summary>
+    /// Mean velocity of all agents
+    /// </summary>
+    public Vector2 MeanVelocity => meanVelocity;
     
     // Ensure data is ready before other scripts access it
     void Awake()
@@ -50,6 +72,9 @@ public class FlowSimulation : MonoBehaviour
         UpdateVelocities(dt);
         UpdatePositions(dt);
         HandleEdgeBouncing();
+        
+        // Calculate flow metrics
+        UpdateFlowMetrics(dt);
     }
     
     void InitializeAgents()
@@ -165,6 +190,42 @@ public class FlowSimulation : MonoBehaviour
         }
     }
     
+    /// <summary>
+    /// Calculate flow metrics for divergence/turbulence measurement
+    /// </summary>
+    void UpdateFlowMetrics(float dt)
+    {
+        if (velocities == null || agentCount == 0) return;
+        
+        // Calculate mean velocity
+        Vector2 sum = Vector2.zero;
+        for (int i = 0; i < agentCount; i++)
+        {
+            sum += velocities[i];
+        }
+        Vector2 newMean = sum / agentCount;
+        
+        // Calculate variance (divergence from mean)
+        float varianceSum = 0f;
+        for (int i = 0; i < agentCount; i++)
+        {
+            Vector2 diff = velocities[i] - newMean;
+            varianceSum += diff.sqrMagnitude;
+        }
+        float newVariance = varianceSum / agentCount;
+        
+        // Smooth the metrics
+        float smoothFactor = 1f - Mathf.Exp(-divergenceSmoothing * dt);
+        meanVelocity = Vector2.Lerp(meanVelocity, newMean, smoothFactor);
+        velocityVariance = Mathf.Lerp(velocityVariance, newVariance, smoothFactor);
+        
+        // Normalize divergence relative to expected variance in laminar flow
+        // In perfectly laminar flow, all agents move at moveSpeed, so variance should be ~0
+        // Maximum expected variance is when agents move in opposite directions: ~(2*moveSpeed)^2
+        float maxExpectedVariance = 4f * moveSpeed * moveSpeed;
+        currentDivergence = Mathf.Sqrt(velocityVariance) / moveSpeed;
+    }
+    
     void OnDrawGizmos()
     {
         if (!showDebugGizmos) return;
@@ -185,6 +246,9 @@ public class FlowSimulation : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Apply a force to all agents within a radius
+    /// </summary>
     public void ApplyForceInRadius(Vector2 center, float radius, Vector2 force)
     {
         float radiusSqr = radius * radius;
@@ -199,6 +263,9 @@ public class FlowSimulation : MonoBehaviour
         }
     }
     
+    /// <summary>
+    /// Dampen velocities within a radius (player's smoothing tool)
+    /// </summary>
     public void DampenInRadius(Vector2 center, float radius, float dampening)
     {
         float radiusSqr = radius * radius;
@@ -211,5 +278,167 @@ public class FlowSimulation : MonoBehaviour
                 velocities[i] *= (1f - dampening * falloff);
             }
         }
+    }
+    
+    /// <summary>
+    /// Inject turbulence: circular/orbital motion around a point
+    /// </summary>
+    public void InjectCircularTurbulence(Vector2 center, float radius, float strength, float dt)
+    {
+        float radiusSqr = radius * radius;
+        for (int i = 0; i < agentCount; i++)
+        {
+            Vector2 toCenter = center - positions[i];
+            float distSqr = toCenter.sqrMagnitude;
+            
+            if (distSqr < radiusSqr && distSqr > 0.01f)
+            {
+                float dist = Mathf.Sqrt(distSqr);
+                float falloff = 1f - (dist / radius);
+                falloff *= falloff;
+                
+                // Tangent direction (perpendicular to center)
+                Vector2 tangent = new Vector2(-toCenter.y, toCenter.x).normalized;
+                velocities[i] += tangent * strength * falloff * dt;
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Inject turbulence: scatter/divergent motion from a point
+    /// </summary>
+    public void InjectScatterTurbulence(Vector2 center, float radius, float strength, float dt)
+    {
+        float radiusSqr = radius * radius;
+        for (int i = 0; i < agentCount; i++)
+        {
+            Vector2 fromCenter = positions[i] - center;
+            float distSqr = fromCenter.sqrMagnitude;
+            
+            if (distSqr < radiusSqr && distSqr > 0.01f)
+            {
+                float dist = Mathf.Sqrt(distSqr);
+                float falloff = 1f - (dist / radius);
+                falloff *= falloff;
+                
+                // Outward direction with some randomness
+                Vector2 outward = fromCenter.normalized;
+                float noiseAngle = (Mathf.PerlinNoise(positions[i].x * 0.1f, positions[i].y * 0.1f) - 0.5f) * Mathf.PI;
+                Vector2 noisy = new Vector2(
+                    outward.x * Mathf.Cos(noiseAngle) - outward.y * Mathf.Sin(noiseAngle),
+                    outward.x * Mathf.Sin(noiseAngle) + outward.y * Mathf.Cos(noiseAngle)
+                );
+                
+                velocities[i] += noisy * strength * falloff * dt;
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Inject turbulence: vortex/spiral motion toward a point
+    /// </summary>
+    public void InjectVortexTurbulence(Vector2 center, float radius, float strength, float inwardPull, float dt)
+    {
+        float radiusSqr = radius * radius;
+        for (int i = 0; i < agentCount; i++)
+        {
+            Vector2 toCenter = center - positions[i];
+            float distSqr = toCenter.sqrMagnitude;
+            
+            if (distSqr < radiusSqr && distSqr > 0.01f)
+            {
+                float dist = Mathf.Sqrt(distSqr);
+                float falloff = 1f - (dist / radius);
+                falloff *= falloff;
+                
+                Vector2 dirToCenter = toCenter / dist;
+                Vector2 tangent = new Vector2(-dirToCenter.y, dirToCenter.x);
+                
+                // Spiral: mostly tangent with some inward pull
+                Vector2 spiral = tangent + dirToCenter * inwardPull;
+                velocities[i] += spiral.normalized * strength * falloff * dt;
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Get the average velocity in a region (for measuring local turbulence)
+    /// </summary>
+    public Vector2 GetAverageVelocityInRadius(Vector2 center, float radius)
+    {
+        float radiusSqr = radius * radius;
+        Vector2 sum = Vector2.zero;
+        int count = 0;
+        
+        for (int i = 0; i < agentCount; i++)
+        {
+            float distSqr = (positions[i] - center).sqrMagnitude;
+            if (distSqr < radiusSqr)
+            {
+                sum += velocities[i];
+                count++;
+            }
+        }
+        
+        return count > 0 ? sum / count : Vector2.zero;
+    }
+    
+    /// <summary>
+    /// Get local divergence in a region (for measuring local turbulence)
+    /// </summary>
+    public float GetLocalDivergence(Vector2 center, float radius)
+    {
+        float radiusSqr = radius * radius;
+        Vector2 sum = Vector2.zero;
+        int count = 0;
+        
+        // First pass: calculate local mean
+        for (int i = 0; i < agentCount; i++)
+        {
+            float distSqr = (positions[i] - center).sqrMagnitude;
+            if (distSqr < radiusSqr)
+            {
+                sum += velocities[i];
+                count++;
+            }
+        }
+        
+        if (count < 2) return 0f;
+        
+        Vector2 localMean = sum / count;
+        
+        // Second pass: calculate variance
+        float variance = 0f;
+        for (int i = 0; i < agentCount; i++)
+        {
+            float distSqr = (positions[i] - center).sqrMagnitude;
+            if (distSqr < radiusSqr)
+            {
+                Vector2 diff = velocities[i] - localMean;
+                variance += diff.sqrMagnitude;
+            }
+        }
+        
+        variance /= count;
+        return Mathf.Sqrt(variance) / moveSpeed;
+    }
+    
+    /// <summary>
+    /// Count agents within a radius
+    /// </summary>
+    public int CountAgentsInRadius(Vector2 center, float radius)
+    {
+        float radiusSqr = radius * radius;
+        int count = 0;
+        
+        for (int i = 0; i < agentCount; i++)
+        {
+            if ((positions[i] - center).sqrMagnitude < radiusSqr)
+            {
+                count++;
+            }
+        }
+        
+        return count;
     }
 }

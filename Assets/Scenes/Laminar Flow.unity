@@ -175,11 +175,6 @@ MonoBehaviour:
   offScreenColor: {r: 1, g: 0.3, b: 0.2, a: 0.9}
   onScreenColor: {r: 1, g: 0.8, b: 0.2, a: 0.8}
   pulseSpeed: 3
-  showDivergenceMeter: 1
-  meterPosition: {x: 20, y: 20}
-  meterSize: {x: 220, y: 24}
-  showInstructions: 1
-  instructionDuration: 12
 --- !u!1 &1382237302
 GameObject:
   m_ObjectHideFlags: 0
@@ -499,64 +494,63 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 314d4d4c5a87aa045b9f87289342394e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  flowSimulation: {fileID: 1382237305}
   eventScheduler: {fileID: 1382237308}
+  mainCamera: {fileID: 2057931241}
+  proximityWeight: 0.5
+  proximityFalloffStart: 20
+  proximityFalloffEnd: 60
+  turbulenceSmoothing: 2
   ambientLayers:
   - name: Base Drone
     clip: {fileID: 8300000, guid: 12120d620d85e4eeca41eccd723e54df, type: 3}
-    baseVolume: 0.4
-    minDivergence: 0
-    maxDivergence: 0
-    volumeCurve:
-      serializedVersion: 2
-      m_Curve: []
-      m_PreInfinity: 0
-      m_PostInfinity: 0
-      m_RotationOrder: 4
-    minPitch: 0
-    maxPitch: 0
+    baseVolume: 0.2
+    triggerThreshold: 0
+    releaseThreshold: 0
+    fadeInTime: 1.5
+    minSustainTime: 3
+    fadeOutTime: 4
+    minPitch: 1
+    maxPitch: 1
     source: {fileID: 0}
     currentVolume: 0
-    targetVolume: 0
+    envelopeValue: 0
+    state: 0
+    stateTimer: 0
   - name: Tension
     clip: {fileID: 8300000, guid: aff0b1735edb04279b0393344c62f781, type: 3}
-    baseVolume: 0.5
-    minDivergence: 0.2
-    maxDivergence: 1
-    volumeCurve:
-      serializedVersion: 2
-      m_Curve: []
-      m_PreInfinity: 0
-      m_PostInfinity: 0
-      m_RotationOrder: 4
-    minPitch: 0
-    maxPitch: 0
+    baseVolume: 0.4
+    triggerThreshold: 0.25
+    releaseThreshold: 0.15
+    fadeInTime: 2
+    minSustainTime: 3
+    fadeOutTime: 4
+    minPitch: 1
+    maxPitch: 1
     source: {fileID: 0}
     currentVolume: 0
-    targetVolume: 0
+    envelopeValue: 0
+    state: 0
+    stateTimer: 0
   - name: Critical
-    clip: {fileID: 8300000, guid: 4a947416f14a04f9fb3ac22a1919d3e0, type: 3}
+    clip: {fileID: 8300000, guid: 18ee99f25c8b748018cab7520c4cc22e, type: 3}
     baseVolume: 0.6
-    minDivergence: 0.8
-    maxDivergence: 1.5
-    volumeCurve:
-      serializedVersion: 2
-      m_Curve: []
-      m_PreInfinity: 0
-      m_PostInfinity: 0
-      m_RotationOrder: 4
-    minPitch: 0
-    maxPitch: 0
+    triggerThreshold: 0.6
+    releaseThreshold: 0.4
+    fadeInTime: 1.5
+    minSustainTime: 2
+    fadeOutTime: 5
+    minPitch: 1
+    maxPitch: 1
     source: {fileID: 0}
     currentVolume: 0
-    targetVolume: 0
+    envelopeValue: 0
+    state: 0
+    stateTimer: 0
   eventStingerClip: {fileID: 8300000, guid: 3d0761b7d50904afaac90da95443198e, type: 3}
-  stingerVolume: 0.6
+  stingerVolume: 0.8
   stingerFadeIn: 0.3
   stingerFadeOut: 2
   masterVolume: 0.8
-  fadeSpeed: 1.5
-  divergenceSmoothing: 2
   enableSpatialHints: 1
   spatialAmount: 0.15
   showDebugInfo: 0

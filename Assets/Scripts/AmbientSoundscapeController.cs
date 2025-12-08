@@ -12,59 +12,82 @@ public class AmbientSoundscapeController : MonoBehaviour
         [Range(0f, 1f)]
         public float baseVolume = 0.5f;
         
-        [Tooltip("Minimum divergence to start fading in (0 = always on)")]
-        public float minDivergence = 0f;
+        [Header("Thresholds (Turbulence Level 0-1+)")]
+        [Tooltip("Turbulence level must exceed this to trigger fade-in")]
+        public float triggerThreshold = 0f;
         
-        [Tooltip("Divergence at which layer reaches full volume")]
-        public float maxDivergence = 1f;
+        [Tooltip("Turbulence must drop below this to start fade-out (set lower than trigger for hysteresis)")]
+        public float releaseThreshold = 0f;
         
-        [Tooltip("Volume curve for fading")]
-        public AnimationCurve volumeCurve = AnimationCurve.Linear(0f, 0f, 1f, 1f);
+        [Header("Envelope Timing")]
+        [Tooltip("Time to fade in when triggered")]
+        public float fadeInTime = 1.5f;
         
-        [Tooltip("Pitch shift based on divergence (1 = no shift)")]
+        [Tooltip("Minimum time to stay at full volume before fade-out can begin")]
+        public float minSustainTime = 2f;
+        
+        [Tooltip("Time to fade out after release")]
+        public float fadeOutTime = 3f;
+        
+        [Header("Pitch Modulation")]
         public float minPitch = 1f;
         public float maxPitch = 1f;
         
+        // Runtime state
         [HideInInspector] public AudioSource source;
         [HideInInspector] public float currentVolume;
-        [HideInInspector] public float targetVolume;
+        [HideInInspector] public float envelopeValue;
+        [HideInInspector] public LayerState state;
+        [HideInInspector] public float stateTimer;
+    }
+    
+    public enum LayerState
+    {
+        Idle,       // Below threshold, silent
+        FadingIn,   // Triggered, ramping up
+        Sustaining, // Holding at full volume
+        FadingOut   // Released, ramping down
     }
     
     [Header("References")]
-    public FlowSimulation flowSimulation;
     public TurbulentEventScheduler eventScheduler;
+    public Camera mainCamera;
+    
+    [Header("Turbulence Calculation")]
+    [Tooltip("How much nearby events contribute more than distant ones (0 = no distance weighting)")]
+    [Range(0f, 1f)]
+    public float proximityWeight = 0.5f;
+    
+    [Tooltip("Distance at which event contribution starts falling off")]
+    public float proximityFalloffStart = 20f;
+    
+    [Tooltip("Distance beyond which events contribute minimally")]
+    public float proximityFalloffEnd = 60f;
+    
+    [Tooltip("Smoothing for turbulence level changes")]
+    [Range(0.5f, 5f)]
+    public float turbulenceSmoothing = 2f;
     
     [Header("Ambient Layers")]
-    [Tooltip("Ambient audio layers that blend based on game state")]
+    [Tooltip("Ambient audio layers with envelope-based triggering")]
     public List<AmbientLayer> ambientLayers = new List<AmbientLayer>();
     
     [Header("Event Stinger")]
-    [Tooltip("Sound that swells when a new turbulence event starts")]
+    [Tooltip("Sound that plays when a new turbulence event starts")]
     public AudioClip eventStingerClip;
     
     [Range(0f, 1f)]
     public float stingerVolume = 0.6f;
     
-    [Tooltip("How long the stinger fades in")]
     public float stingerFadeIn = 0.3f;
-    
-    [Tooltip("How long the stinger fades out")]
     public float stingerFadeOut = 2f;
     
     [Header("Global Settings")]
     [Range(0f, 1f)]
     public float masterVolume = 0.8f;
     
-    [Tooltip("How quickly layers fade (higher = faster response)")]
-    [Range(0.5f, 5f)]
-    public float fadeSpeed = 1.5f;
-    
-    [Tooltip("Smoothing for divergence input")]
-    [Range(0.5f, 5f)]
-    public float divergenceSmoothing = 2f;
-    
     [Header("Spatial Audio")]
-    [Tooltip("Add subtle stereo movement based on nearest event direction")]
+    [Tooltip("Add subtle stereo panning toward nearest event")]
     public bool enableSpatialHints = true;
     
     [Range(0f, 0.3f)]
@@ -74,7 +97,8 @@ public class AmbientSoundscapeController : MonoBehaviour
     public bool showDebugInfo = false;
     
     // Runtime state
-    private float smoothedDivergence = 0f;
+    private float currentTurbulenceLevel = 0f;
+    private float smoothedTurbulenceLevel = 0f;
     private float currentPanPosition = 0f;
     private AudioSource stingerSource;
     private float stingerTimer = 0f;
@@ -82,7 +106,7 @@ public class AmbientSoundscapeController : MonoBehaviour
     
     // Event tracking
     private HashSet<string> knownEvents = new HashSet<string>();
-    private int lastActiveEventCount = 0;
+    private int activeEventCount = 0;
     
     void Start()
     {
@@ -93,16 +117,15 @@ public class AmbientSoundscapeController : MonoBehaviour
     
     void FindReferences()
     {
-        if (flowSimulation == null)
-            flowSimulation = FindObjectOfType<FlowSimulation>();
-        
         if (eventScheduler == null)
             eventScheduler = FindObjectOfType<TurbulentEventScheduler>();
+        
+        if (mainCamera == null)
+            mainCamera = Camera.main;
     }
     
     void InitializeAudioSources()
     {
-        // Create audio sources for each layer
         for (int i = 0; i < ambientLayers.Count; i++)
         {
             var layer = ambientLayers[i];
@@ -114,12 +137,14 @@ public class AmbientSoundscapeController : MonoBehaviour
             layer.source.clip = layer.clip;
             layer.source.loop = true;
             layer.source.playOnAwake = false;
-            layer.source.spatialBlend = 0f; // 2D audio
+            layer.source.spatialBlend = 0f;
             layer.source.volume = 0f;
             layer.source.pitch = layer.minPitch;
             
             layer.currentVolume = 0f;
-            layer.targetVolume = 0f;
+            layer.envelopeValue = 0f;
+            layer.state = LayerState.Idle;
+            layer.stateTimer = 0f;
         }
         
         // Create stinger source
@@ -139,10 +164,8 @@ public class AmbientSoundscapeController : MonoBehaviour
         {
             if (layer.clip != null && layer.source != null)
             {
-                // Start with random offset for variety
                 layer.source.time = Random.Range(0f, layer.clip.length);
                 layer.source.Play();
-                
                 Debug.Log($"[Ambience] Started layer: {layer.name}");
             }
         }
@@ -150,62 +173,196 @@ public class AmbientSoundscapeController : MonoBehaviour
     
     void Update()
     {
-        UpdateDivergence();
-        UpdateLayerVolumes();
+        CalculateTurbulenceLevel();
+        UpdateLayerEnvelopes();
         UpdateSpatialPanning();
         UpdateStinger();
         CheckForNewEvents();
     }
     
-    void UpdateDivergence()
+    /// <summary>
+    /// Calculate turbulence level from active events, weighted by proximity to camera
+    /// </summary>
+    void CalculateTurbulenceLevel()
     {
-        if (flowSimulation == null) return;
+        if (eventScheduler == null)
+        {
+            currentTurbulenceLevel = 0f;
+            smoothedTurbulenceLevel = Mathf.Lerp(smoothedTurbulenceLevel, 0f, Time.deltaTime * turbulenceSmoothing);
+            return;
+        }
         
-        float targetDiv = flowSimulation.CurrentDivergence;
-        smoothedDivergence = Mathf.Lerp(smoothedDivergence, targetDiv, Time.deltaTime * divergenceSmoothing);
+        var activeEvents = eventScheduler.GetActiveEvents();
+        activeEventCount = 0;
+        
+        Vector2 cameraPos = mainCamera != null 
+            ? new Vector2(mainCamera.transform.position.x, mainCamera.transform.position.y)
+            : Vector2.zero;
+        
+        float totalTurbulence = 0f;
+        float peakTurbulence = 0f;
+        
+        foreach (var evt in activeEvents)
+        {
+            if (!evt.isActive) continue;
+            
+            activeEventCount++;
+            
+            // Base contribution: intensity × strength (normalized)
+            // strength typically ranges 1.5-4, so normalize by dividing by ~3
+            float baseContribution = evt.currentIntensity * (evt.strength / 3f);
+            
+            // Distance weighting
+            float distance = Vector2.Distance(cameraPos, evt.position);
+            float proximityFactor = 1f;
+            
+            if (proximityWeight > 0f)
+            {
+                if (distance < proximityFalloffStart)
+                {
+                    proximityFactor = 1f;
+                }
+                else if (distance > proximityFalloffEnd)
+                {
+                    proximityFactor = 1f - proximityWeight; // Minimum contribution
+                }
+                else
+                {
+                    // Smooth falloff
+                    float t = (distance - proximityFalloffStart) / (proximityFalloffEnd - proximityFalloffStart);
+                    t = t * t; // Quadratic falloff
+                    proximityFactor = Mathf.Lerp(1f, 1f - proximityWeight, t);
+                }
+            }
+            
+            float contribution = baseContribution * proximityFactor;
+            totalTurbulence += contribution;
+            peakTurbulence = Mathf.Max(peakTurbulence, contribution);
+        }
+        
+        // Combine sum and peak for final level
+        // sqrt of sum gives diminishing returns for many events
+        float sumComponent = Mathf.Sqrt(totalTurbulence);
+        float peakComponent = peakTurbulence;
+        
+        // Blend: mostly peak-driven, but multiple events still increase tension
+        currentTurbulenceLevel = Mathf.Max(peakComponent, sumComponent * 0.7f);
+        
+        // Smooth the turbulence level
+        smoothedTurbulenceLevel = Mathf.Lerp(
+            smoothedTurbulenceLevel, 
+            currentTurbulenceLevel, 
+            Time.deltaTime * turbulenceSmoothing
+        );
     }
     
-    void UpdateLayerVolumes()
+    void UpdateLayerEnvelopes()
     {
+        float dt = Time.deltaTime;
+        
         foreach (var layer in ambientLayers)
         {
             if (layer.source == null) continue;
             
-            // Calculate target volume based on divergence
-            float divRange = layer.maxDivergence - layer.minDivergence;
-            float normalizedDiv = 0f;
+            layer.stateTimer += dt;
             
-            if (divRange > 0.001f)
+            // State machine for envelope
+            switch (layer.state)
             {
-                normalizedDiv = Mathf.Clamp01((smoothedDivergence - layer.minDivergence) / divRange);
-            }
-            else if (smoothedDivergence >= layer.minDivergence)
-            {
-                normalizedDiv = 1f;
+                case LayerState.Idle:
+                    if (smoothedTurbulenceLevel >= layer.triggerThreshold)
+                    {
+                        layer.state = LayerState.FadingIn;
+                        layer.stateTimer = 0f;
+                    }
+                    layer.envelopeValue = 0f;
+                    break;
+                    
+                case LayerState.FadingIn:
+                    if (layer.fadeInTime > 0f)
+                    {
+                        layer.envelopeValue = Mathf.Clamp01(layer.stateTimer / layer.fadeInTime);
+                    }
+                    else
+                    {
+                        layer.envelopeValue = 1f;
+                    }
+                    
+                    if (layer.envelopeValue >= 1f)
+                    {
+                        layer.state = LayerState.Sustaining;
+                        layer.stateTimer = 0f;
+                        layer.envelopeValue = 1f;
+                    }
+                    break;
+                    
+                case LayerState.Sustaining:
+                    layer.envelopeValue = 1f;
+                    
+                    // Release only after minimum sustain and below release threshold
+                    if (layer.stateTimer >= layer.minSustainTime && 
+                        smoothedTurbulenceLevel < layer.releaseThreshold)
+                    {
+                        layer.state = LayerState.FadingOut;
+                        layer.stateTimer = 0f;
+                    }
+                    // Re-trigger resets sustain timer
+                    else if (smoothedTurbulenceLevel >= layer.triggerThreshold)
+                    {
+                        layer.stateTimer = 0f;
+                    }
+                    break;
+                    
+                case LayerState.FadingOut:
+                    if (layer.fadeOutTime > 0f)
+                    {
+                        layer.envelopeValue = 1f - Mathf.Clamp01(layer.stateTimer / layer.fadeOutTime);
+                    }
+                    else
+                    {
+                        layer.envelopeValue = 0f;
+                    }
+                    
+                    // Re-trigger during fade-out
+                    if (smoothedTurbulenceLevel >= layer.triggerThreshold)
+                    {
+                        layer.state = LayerState.FadingIn;
+                        // Continue from current envelope position
+                        layer.stateTimer = layer.envelopeValue * layer.fadeInTime;
+                    }
+                    else if (layer.envelopeValue <= 0f)
+                    {
+                        layer.state = LayerState.Idle;
+                        layer.stateTimer = 0f;
+                        layer.envelopeValue = 0f;
+                    }
+                    break;
             }
             
-            // Apply volume curve
-            float curveValue = layer.volumeCurve.Evaluate(normalizedDiv);
-            layer.targetVolume = layer.baseVolume * curveValue * masterVolume;
+            // Apply smooth easing
+            float easedEnvelope = SmoothStep(layer.envelopeValue);
             
-            // Smooth volume transition
-            layer.currentVolume = Mathf.Lerp(layer.currentVolume, layer.targetVolume, Time.deltaTime * fadeSpeed);
+            // Final volume
+            layer.currentVolume = layer.baseVolume * easedEnvelope * masterVolume;
             layer.source.volume = layer.currentVolume;
             
-            // Pitch shift
-            float targetPitch = Mathf.Lerp(layer.minPitch, layer.maxPitch, normalizedDiv);
-            layer.source.pitch = Mathf.Lerp(layer.source.pitch, targetPitch, Time.deltaTime * fadeSpeed);
+            // Pitch modulation based on turbulence intensity
+            float pitchT = Mathf.Clamp01(smoothedTurbulenceLevel);
+            float targetPitch = Mathf.Lerp(layer.minPitch, layer.maxPitch, pitchT);
+            layer.source.pitch = Mathf.Lerp(layer.source.pitch, targetPitch, dt * 2f);
         }
+    }
+    
+    float SmoothStep(float t)
+    {
+        return t * t * (3f - 2f * t);
     }
     
     void UpdateSpatialPanning()
     {
-        if (!enableSpatialHints || eventScheduler == null) return;
+        if (!enableSpatialHints || eventScheduler == null || mainCamera == null) return;
         
-        // Find direction to nearest off-screen event
-        Vector2 cameraPos = Camera.main != null ? 
-            new Vector2(Camera.main.transform.position.x, Camera.main.transform.position.y) : 
-            Vector2.zero;
+        Vector2 cameraPos = new Vector2(mainCamera.transform.position.x, mainCamera.transform.position.y);
         
         float targetPan = 0f;
         float nearestDist = float.MaxValue;
@@ -217,18 +374,19 @@ public class AmbientSoundscapeController : MonoBehaviour
             Vector2 toEvent = evt.position - cameraPos;
             float dist = toEvent.magnitude;
             
-            if (dist < nearestDist && dist > 5f) // Only pan for off-screen events
+            // Weight by intensity - more intense events pull harder
+            float effectiveDist = dist / (evt.currentIntensity + 0.1f);
+            
+            if (effectiveDist < nearestDist && dist > 5f)
             {
-                nearestDist = dist;
-                // Normalize X direction for pan (-1 to 1)
+                nearestDist = effectiveDist;
                 targetPan = Mathf.Clamp(toEvent.x / 30f, -1f, 1f) * spatialAmount;
             }
         }
         
-        // Smooth pan transition
         currentPanPosition = Mathf.Lerp(currentPanPosition, targetPan, Time.deltaTime * 2f);
         
-        // Apply subtle pan to tension layers (not base layer)
+        // Apply pan to non-base layers only
         for (int i = 1; i < ambientLayers.Count; i++)
         {
             if (ambientLayers[i].source != null)
@@ -244,19 +402,16 @@ public class AmbientSoundscapeController : MonoBehaviour
         {
             stingerTimer -= Time.deltaTime;
             
-            // Fade envelope
             float fadeTime = stingerFadeIn + stingerFadeOut;
             float elapsed = fadeTime - stingerTimer;
             
             float volume;
             if (elapsed < stingerFadeIn)
             {
-                // Fade in
                 volume = (elapsed / stingerFadeIn) * stingerVolume * masterVolume;
             }
             else
             {
-                // Fade out
                 float fadeOutElapsed = elapsed - stingerFadeIn;
                 volume = (1f - fadeOutElapsed / stingerFadeOut) * stingerVolume * masterVolume;
             }
@@ -277,7 +432,6 @@ public class AmbientSoundscapeController : MonoBehaviour
         
         var activeEvents = eventScheduler.GetActiveEvents();
         
-        // Check for new events
         foreach (var evt in activeEvents)
         {
             if (evt.isActive && !knownEvents.Contains(evt.eventName))
@@ -287,28 +441,19 @@ public class AmbientSoundscapeController : MonoBehaviour
             }
         }
         
-        // Clean up ended events
         knownEvents.RemoveWhere(name => !activeEvents.Exists(e => e.eventName == name && e.isActive));
-        
-        lastActiveEventCount = activeEvents.Count;
     }
     
     void OnNewEventStarted(TurbulenceEvent evt)
     {
-        // Trigger stinger
         TriggerStinger();
-        
-        Debug.Log($"[Ambience] New event detected: {evt.eventName}, triggering stinger");
+        Debug.Log($"[Ambience] New event: {evt.eventName} at ({evt.position.x:F0}, {evt.position.y:F0})");
     }
     
-    /// <summary>
-    /// Trigger the event stinger sound
-    /// </summary>
     public void TriggerStinger()
     {
         if (eventStingerClip == null || stingerSource == null) return;
         
-        // Reset and play stinger
         stingerSource.Stop();
         stingerSource.clip = eventStingerClip;
         stingerSource.volume = 0f;
@@ -319,24 +464,18 @@ public class AmbientSoundscapeController : MonoBehaviour
     }
     
     /// <summary>
-    /// Manually set divergence (for testing or cutscenes)
+    /// Get current turbulence level (for external systems)
     /// </summary>
-    public void SetDivergenceOverride(float divergence)
+    public float GetTurbulenceLevel()
     {
-        smoothedDivergence = divergence;
+        return smoothedTurbulenceLevel;
     }
     
-    /// <summary>
-    /// Fade all audio to silence
-    /// </summary>
     public void FadeToSilence(float duration)
     {
         StartCoroutine(FadeAllCoroutine(0f, duration));
     }
     
-    /// <summary>
-    /// Fade all audio back to normal
-    /// </summary>
     public void FadeIn(float duration)
     {
         StartCoroutine(FadeAllCoroutine(masterVolume, duration));
@@ -361,29 +500,80 @@ public class AmbientSoundscapeController : MonoBehaviour
     {
         if (!showDebugInfo) return;
         
-        GUILayout.BeginArea(new Rect(Screen.width - 250, 150, 240, 300));
-        GUI.color = new Color(0, 0, 0, 0.7f);
-        GUI.Box(new Rect(0, 0, 240, 300), "");
+        GUILayout.BeginArea(new Rect(Screen.width - 300, 150, 290, 400));
+        GUI.color = new Color(0, 0, 0, 0.85f);
+        GUI.Box(new Rect(0, 0, 290, 400), "");
         GUI.color = Color.white;
         
         GUILayout.Label("=== AMBIENT SOUNDSCAPE ===");
-        GUILayout.Label($"Divergence: {smoothedDivergence:F3}");
-        GUILayout.Label($"Pan: {currentPanPosition:F2}");
-        GUILayout.Label($"Stinger: {(stingerPlaying ? "Playing" : "Idle")}");
+        GUILayout.Space(5);
+        
+        // Turbulence display
+        GUILayout.Label($"Active Events: {activeEventCount}");
+        GUILayout.Label($"Turbulence (raw):      {currentTurbulenceLevel:F3}");
+        GUILayout.Label($"Turbulence (smoothed): {smoothedTurbulenceLevel:F3}");
+        
+        // Turbulence bar
+        Rect turbBar = GUILayoutUtility.GetRect(270, 12);
+        GUI.color = new Color(0.15f, 0.15f, 0.15f);
+        GUI.DrawTexture(turbBar, Texture2D.whiteTexture);
+        
+        // Color gradient based on level
+        float t = Mathf.Clamp01(smoothedTurbulenceLevel);
+        Color turbColor = Color.Lerp(new Color(0.2f, 0.6f, 0.2f), new Color(1f, 0.3f, 0.2f), t);
+        GUI.color = turbColor;
+        GUI.DrawTexture(new Rect(turbBar.x, turbBar.y, turbBar.width * Mathf.Clamp01(smoothedTurbulenceLevel), turbBar.height), Texture2D.whiteTexture);
+        GUI.color = Color.white;
+        
         GUILayout.Space(10);
+        GUILayout.Label($"Stereo Pan: {currentPanPosition:F2}");
+        GUILayout.Label($"Stinger: {(stingerPlaying ? "PLAYING" : "idle")}");
+        
+        GUILayout.Space(10);
+        GUILayout.Label("--- Layers ---");
         
         foreach (var layer in ambientLayers)
         {
-            string status = layer.clip != null ? $"{layer.currentVolume:F2}" : "NO CLIP";
-            GUILayout.Label($"{layer.name}: {status}");
+            GUILayout.Space(3);
+            GUILayout.Label($"{layer.name} [{layer.state}]");
+            GUILayout.Label($"  Trigger: {layer.triggerThreshold:F2} | Release: {layer.releaseThreshold:F2}");
+            
+            // Envelope bar
+            Rect barRect = GUILayoutUtility.GetRect(270, 10);
+            GUI.color = new Color(0.2f, 0.2f, 0.2f);
+            GUI.DrawTexture(barRect, Texture2D.whiteTexture);
+            GUI.color = GetStateColor(layer.state);
+            GUI.DrawTexture(new Rect(barRect.x, barRect.y, barRect.width * layer.envelopeValue, barRect.height), Texture2D.whiteTexture);
+            
+            // Threshold markers
+            GUI.color = new Color(1f, 1f, 0f, 0.8f);
+            float triggerX = barRect.x + barRect.width * Mathf.Clamp01(layer.triggerThreshold);
+            GUI.DrawTexture(new Rect(triggerX, barRect.y, 2, barRect.height), Texture2D.whiteTexture);
+            
+            GUI.color = new Color(0f, 1f, 1f, 0.6f);
+            float releaseX = barRect.x + barRect.width * Mathf.Clamp01(layer.releaseThreshold);
+            GUI.DrawTexture(new Rect(releaseX, barRect.y, 2, barRect.height), Texture2D.whiteTexture);
+            
+            GUI.color = Color.white;
         }
         
         GUILayout.EndArea();
     }
     
+    Color GetStateColor(LayerState state)
+    {
+        switch (state)
+        {
+            case LayerState.Idle: return new Color(0.3f, 0.3f, 0.3f);
+            case LayerState.FadingIn: return new Color(0.2f, 0.9f, 0.3f);
+            case LayerState.Sustaining: return new Color(0.3f, 0.6f, 1f);
+            case LayerState.FadingOut: return new Color(1f, 0.5f, 0.2f);
+            default: return Color.white;
+        }
+    }
+    
     void OnDestroy()
     {
-        // Cleanup audio sources
         foreach (var layer in ambientLayers)
         {
             if (layer.source != null)

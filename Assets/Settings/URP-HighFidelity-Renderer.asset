@@ -53,8 +53,7 @@ MonoBehaviour:
     hdrDebugViewPS: {fileID: 4800000, guid: 573620ae32aec764abd4d728906d2587, type: 3}
   m_RendererFeatures:
   - {fileID: -1878332245247344467}
-  - {fileID: 144672497551415977}
-  m_RendererFeatureMap: adc0de57c6d2eee5a91a52b9defa0102
+  m_RendererFeatureMap: adc0de57c6d2eee5
   m_UseNativeRenderPass: 0
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
   xrSystemData: {fileID: 11400000, guid: 60e1133243b97e347b653163a8c01b64, type: 2}
@@ -103,68 +102,3 @@ MonoBehaviour:
   m_CopyDepthMode: 0
   m_AccurateGbufferNormals: 0
   m_IntermediateTextureMode: 1
---- !u!114 &144672497551415977
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a95a6e417d4177749a1df85d7d554f64, type: 3}
-  m_Name: CRTTV
-  m_EditorClassIdentifier: 
-  m_Active: 0
-  settings:
-    intensity: 1
-    shadowmaskStrength: 1
-    shadowmaskLuminosity: 0.977
-    shadowmaskScale: 0.5
-    shadowmaskVerticalGapHardness: 0.1
-    shadowmaskHorizontalGapHardness: 0.8
-    shadowmaskColorOffset: {x: 0, y: -0.3, z: -0.6}
-    fishEyeStrength: 0.2
-    fishEyeZoom: {x: 1, y: 1}
-    distortion: 0.17
-    distortionSpeed: 1
-    distortionAmplitude: 2
-    vignetteSmoothness: 0.7
-    vignetteRounding: 0.5
-    vignetteBorders: {x: 0, y: 0.15}
-    shineStrength: 0.3
-    shineColor: {r: 0.5, g: 0.5, b: 0.5, a: 0.5}
-    shinePosition: {x: 0.5, y: 1}
-    rgbOffsetStrength: 0.25
-    colorBleedingStrength: 0.25
-    colorBleedingDistance: 0.5
-    colorCurves: {r: 0.95, g: 1.05, b: 0.95, a: 1}
-    gammaColor: {x: 0.9, y: 0.7, z: 1.2, w: 1}
-    scanlines: 1
-    scanlinesCount: 1.25
-    scanlinesVelocity: 3.5
-    interferenceStrength: 0.2
-    interferencePeakStrength: 0.3
-    interferencePeakPosition: 0.2
-    shakeStrength: 1
-    shakeRate: 0.2
-    movementStrength: 1
-    movementRate: 0.2
-    movementSpeed: 0.4
-    grain: 0
-    staticNoise: 0
-    barStrength: 0.1
-    barHeight: 6
-    barSpeed: 4
-    barOverflow: 1.2
-    flickerStrength: 0.1
-    flickerSpeed: 50
-    brightness: 0
-    contrast: 1
-    gamma: 1
-    hue: 0
-    saturation: 1
-    affectSceneView: 0
-    enableProfiling: 0
-    filterMode: 1
-    whenToInsert: 550

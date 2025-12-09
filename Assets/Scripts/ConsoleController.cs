@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using UnityEngine.Rendering.Universal;
 using System.Collections;
 
 /// <summary>
@@ -14,11 +15,11 @@ using System.Collections;
 public class ConsoleController : MonoBehaviour
 {
     [Header("Layout")]
-    [Tooltip("Spacing between panels and from screen edges")]
+    [Tooltip("Margin from screen edges")]
     public float margin = 40f;
     
     [Tooltip("Gap between camera feeds")]
-    public float gap = 8f;
+    public float gap = 16f;
     
     [Tooltip("Aspect ratio for each camera panel (1.778 = 16:9)")]
     public float panelAspectRatio = 1.778f;
@@ -43,9 +44,6 @@ public class ConsoleController : MonoBehaviour
     [Tooltip("Speed of static animation")]
     public float staticSpeed = 15f;
     
-    [Tooltip("Static grain scale")]
-    public float staticScale = 200f;
-    
     [Tooltip("Base color for static (greenish CRT feel)")]
     public Color staticBaseColor = new Color(0.1f, 0.12f, 0.1f, 1f);
     
@@ -61,13 +59,6 @@ public class ConsoleController : MonoBehaviour
     
     [Tooltip("Frame thickness")]
     public float frameThickness = 4f;
-    
-    [Header("Labels")]
-    [Tooltip("Show camera labels (CAM 01, etc.)")]
-    public bool showLabels = true;
-    
-    [Tooltip("Label color")]
-    public Color labelColor = new Color(0.3f, 0.5f, 0.3f, 0.8f);
     
     [Header("Transition")]
     [Tooltip("Fade duration when entering Laminar Flow")]
@@ -87,9 +78,8 @@ public class ConsoleController : MonoBehaviour
     private Canvas canvas;
     private RawImage[] feedPanels = new RawImage[4];
     private Image[] feedFrames = new Image[4];
-    private Text[] feedLabels = new Text[4];
     private Image fadeOverlay;
-    private RenderTexture[] staticTextures = new RenderTexture[4];
+    private Texture2D[] staticTextures = new Texture2D[4];
     
     // State
     private int hoveredFeed = -1;
@@ -97,37 +87,33 @@ public class ConsoleController : MonoBehaviour
     private bool isTransitioning = false;
     private bool isReturning = false;
     private bool isBooting = true;
-    private float bootTimer = 0f;
-    private float bootDuration = 2f;
     
     // Preview generator
     private PreviewTextureGenerator previewGenerator;
-    
-    // Cached
-    private Texture2D whiteTexture;
-    private Material staticMaterial;
     
     // Singleton for cross-scene communication
     private static ConsoleController instance;
     public static ConsoleController Instance => instance;
     
+    // Flag to indicate we're returning from documentary
+    private static bool returningFromDocumentary = false;
+    
+    public static void SetReturningFromDocumentary()
+    {
+        returningFromDocumentary = true;
+    }
+    
     void Awake()
     {
-        if (instance != null && instance != this)
-        {
-            Destroy(gameObject);
-            return;
-        }
+        // Don't use singleton pattern anymore - allow fresh instances
         instance = this;
-        DontDestroyOnLoad(gameObject);
     }
     
     void Start()
     {
-        CreateTextures();
+        CreateStaticTextures();
         CreatePreviewIfNeeded();
         CreateUI();
-        CreateStaticMaterial();
         
         // Initialize brightness
         for (int i = 0; i < 4; i++)
@@ -136,9 +122,11 @@ public class ConsoleController : MonoBehaviour
         }
         
         // Check if returning from documentary
-        if (isReturning)
+        if (returningFromDocumentary)
         {
+            returningFromDocumentary = false;
             isBooting = false;
+            isReturning = true;
             StartCoroutine(FadeIn());
         }
         else
@@ -146,6 +134,360 @@ public class ConsoleController : MonoBehaviour
             // Normal boot sequence
             StartCoroutine(BootSequence());
         }
+    }
+    
+    void CreateStaticTextures()
+    {
+        // Create static noise textures for inactive feeds (CPU-based, no GL commands)
+        for (int i = 0; i < 4; i++)
+        {
+            if (i != activeFeedIndex)
+            {
+                staticTextures[i] = new Texture2D(128, 72, TextureFormat.RGB24, false);
+                staticTextures[i].filterMode = FilterMode.Point;
+                staticTextures[i].wrapMode = TextureWrapMode.Clamp;
+                staticTextures[i].name = $"StaticNoise_{i}";
+                UpdateStaticTexture(i);
+            }
+        }
+    }
+    
+    void CreatePreviewIfNeeded()
+    {
+        // Check if we have a preview texture
+        if (previewTexture == null)
+        {
+            // Create preview generator
+            GameObject genObj = new GameObject("PreviewGenerator");
+            genObj.transform.SetParent(transform);
+            previewGenerator = genObj.AddComponent<PreviewTextureGenerator>();
+        }
+    }
+    
+    void CreateUI()
+    {
+        // Create canvas
+        GameObject canvasObj = new GameObject("ConsoleCanvas");
+        canvasObj.transform.SetParent(transform);
+        canvas = canvasObj.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 50;
+        
+        CanvasScaler scaler = canvasObj.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920, 1080);
+        scaler.matchWidthOrHeight = 0.5f; // Balance between width and height matching
+        
+        canvasObj.AddComponent<GraphicRaycaster>();
+        
+        // Background
+        GameObject bgObj = new GameObject("Background");
+        bgObj.transform.SetParent(canvas.transform);
+        Image bg = bgObj.AddComponent<Image>();
+        bg.color = consoleBackgroundColor;
+        bg.raycastTarget = false;
+        RectTransform bgRect = bgObj.GetComponent<RectTransform>();
+        bgRect.anchorMin = Vector2.zero;
+        bgRect.anchorMax = Vector2.one;
+        bgRect.offsetMin = Vector2.zero;
+        bgRect.offsetMax = Vector2.zero;
+        
+        // Create feed panels (2x2 grid)
+        for (int i = 0; i < 4; i++)
+        {
+            CreateFeedPanel(i);
+        }
+        
+        // Fade overlay (on top)
+        GameObject fadeObj = new GameObject("FadeOverlay");
+        fadeObj.transform.SetParent(canvas.transform);
+        fadeOverlay = fadeObj.AddComponent<Image>();
+        fadeOverlay.color = new Color(0, 0, 0, 0);
+        fadeOverlay.raycastTarget = false;
+        RectTransform fadeRect = fadeObj.GetComponent<RectTransform>();
+        fadeRect.anchorMin = Vector2.zero;
+        fadeRect.anchorMax = Vector2.one;
+        fadeRect.offsetMin = Vector2.zero;
+        fadeRect.offsetMax = Vector2.zero;
+        
+        // Force initial layout update
+        Canvas.ForceUpdateCanvases();
+        UpdateLayout();
+    }
+    
+    void CreateFeedPanel(int index)
+    {
+        // Frame container
+        GameObject frameObj = new GameObject($"FeedFrame_{index}");
+        frameObj.transform.SetParent(canvas.transform);
+        feedFrames[index] = frameObj.AddComponent<Image>();
+        feedFrames[index].color = frameColor;
+        feedFrames[index].raycastTarget = false;
+        
+        // Feed panel (the actual image)
+        GameObject panelObj = new GameObject($"FeedPanel_{index}");
+        panelObj.transform.SetParent(frameObj.transform);
+        feedPanels[index] = panelObj.AddComponent<RawImage>();
+        feedPanels[index].raycastTarget = (index == activeFeedIndex);
+        
+        // Set initial texture
+        if (index == activeFeedIndex)
+        {
+            // Will be set later once preview is ready
+            feedPanels[index].color = dimmedColor;
+        }
+        else
+        {
+            feedPanels[index].texture = staticTextures[index];
+            feedPanels[index].color = Color.white;
+        }
+    }
+    
+    void Update()
+    {
+        if (isTransitioning || isBooting) return;
+        
+        // Ensure preview texture is assigned
+        if (feedPanels[activeFeedIndex] != null && feedPanels[activeFeedIndex].texture == null)
+        {
+            if (previewGenerator != null && previewGenerator.generatedTexture != null)
+            {
+                feedPanels[activeFeedIndex].texture = previewGenerator.generatedTexture;
+            }
+            else if (previewTexture != null)
+            {
+                feedPanels[activeFeedIndex].texture = previewTexture;
+            }
+        }
+        
+        UpdateLayout();
+        UpdateStaticNoise();
+        UpdateHoverDetection();
+        UpdateFeedBrightness();
+        UpdateClickDetection();
+    }
+    
+    void UpdateLayout()
+    {
+        // Get the canvas RectTransform for proper sizing (accounts for CanvasScaler)
+        RectTransform canvasRect = canvas.GetComponent<RectTransform>();
+        float sw = canvasRect.rect.width;
+        float sh = canvasRect.rect.height;
+        
+        // Fallback to screen size if canvas rect is not ready
+        if (sw <= 0 || sh <= 0)
+        {
+            sw = Screen.width;
+            sh = Screen.height;
+        }
+        
+        // Calculate available space for the 2x2 grid (with margins on all sides)
+        float availableWidth = sw - (margin * 2f);
+        float availableHeight = sh - (margin * 2f);
+        
+        // Calculate panel dimensions to fill the available space while maintaining 16:9 aspect ratio
+        // We have 2 columns and 2 rows with a gap between them
+        // Total grid width = 2 * panelWidth + gap
+        // Total grid height = 2 * panelHeight + gap
+        
+        // Try fitting by width first
+        float panelWidth = (availableWidth - gap) / 2f;
+        float panelHeight = panelWidth / panelAspectRatio;
+        float totalGridHeight = (panelHeight * 2f) + gap;
+        
+        // If too tall, fit by height instead
+        if (totalGridHeight > availableHeight)
+        {
+            panelHeight = (availableHeight - gap) / 2f;
+            panelWidth = panelHeight * panelAspectRatio;
+        }
+        
+        // Calculate grid starting position (centered in available space)
+        float totalGridWidth = (panelWidth * 2f) + gap;
+        totalGridHeight = (panelHeight * 2f) + gap;
+        float startX = (sw - totalGridWidth) / 2f;
+        float startY = (sh - totalGridHeight) / 2f;
+        
+        // Position each panel
+        for (int i = 0; i < 4; i++)
+        {
+            int row = i / 2;    // 0 for top row (indices 0,1), 1 for bottom row (indices 2,3)
+            int col = i % 2;    // 0 for left column, 1 for right column
+            
+            float x = startX + col * (panelWidth + gap);
+            // Flip row so index 0,1 are at top (higher y in screen coords)
+            float y = startY + (1 - row) * (panelHeight + gap);
+            
+            // Frame (includes frame thickness)
+            RectTransform frameRect = feedFrames[i].GetComponent<RectTransform>();
+            frameRect.anchorMin = Vector2.zero;
+            frameRect.anchorMax = Vector2.zero;
+            frameRect.pivot = Vector2.zero;
+            frameRect.anchoredPosition = new Vector2(x - frameThickness, y - frameThickness);
+            frameRect.sizeDelta = new Vector2(panelWidth + frameThickness * 2f, panelHeight + frameThickness * 2f);
+            
+            // Panel (inside frame, filling it minus the frame thickness)
+            RectTransform panelRect = feedPanels[i].GetComponent<RectTransform>();
+            panelRect.anchorMin = Vector2.zero;
+            panelRect.anchorMax = Vector2.one;
+            panelRect.offsetMin = new Vector2(frameThickness, frameThickness);
+            panelRect.offsetMax = new Vector2(-frameThickness, -frameThickness);
+        }
+    }
+    
+    void UpdateStaticNoise()
+    {
+        // Update static noise textures for inactive feeds (CPU-based, no GL)
+        for (int i = 0; i < 4; i++)
+        {
+            if (i == activeFeedIndex) continue;
+            if (staticTextures[i] == null) continue;
+            
+            // Only update every few frames to save performance
+            if (Time.frameCount % 2 == i % 2)
+            {
+                UpdateStaticTexture(i);
+            }
+        }
+    }
+    
+    void UpdateStaticTexture(int index)
+    {
+        Texture2D tex = staticTextures[index];
+        if (tex == null) return;
+        
+        Color[] pixels = tex.GetPixels();
+        int seed = (int)(Time.time * staticSpeed * 1000) + index * 12345;
+        System.Random rng = new System.Random(seed);
+        
+        for (int i = 0; i < pixels.Length; i++)
+        {
+            float noise = (float)rng.NextDouble();
+            pixels[i] = Color.Lerp(staticBaseColor, staticNoiseColor, noise * 0.5f);
+        }
+        
+        tex.SetPixels(pixels);
+        tex.Apply();
+    }
+    
+    void UpdateHoverDetection()
+    {
+        hoveredFeed = -1;
+        
+        // Check if mouse is over active feed
+        if (feedPanels[activeFeedIndex] != null)
+        {
+            RectTransform rect = feedPanels[activeFeedIndex].GetComponent<RectTransform>();
+            Vector2 localPoint;
+            
+            if (RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                rect, Input.mousePosition, null, out localPoint))
+            {
+                if (rect.rect.Contains(localPoint))
+                {
+                    hoveredFeed = activeFeedIndex;
+                }
+            }
+        }
+    }
+    
+    void UpdateFeedBrightness()
+    {
+        float dt = Time.deltaTime * hoverTransitionSpeed;
+        
+        for (int i = 0; i < 4; i++)
+        {
+            if (i == activeFeedIndex)
+            {
+                float target = (hoveredFeed == i) ? 1f : 0f;
+                feedBrightness[i] = Mathf.Lerp(feedBrightness[i], target, dt);
+                
+                Color c = Color.Lerp(dimmedColor, hoveredColor, feedBrightness[i]);
+                feedPanels[i].color = c;
+                
+                // Update cursor
+                if (hoveredFeed == i)
+                {
+                    Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
+                }
+            }
+        }
+    }
+    
+    void UpdateClickDetection()
+    {
+        if (Input.GetMouseButtonDown(0) && hoveredFeed == activeFeedIndex)
+        {
+            StartCoroutine(TransitionToLaminarFlow());
+        }
+    }
+    
+    IEnumerator TransitionToLaminarFlow()
+    {
+        isTransitioning = true;
+        
+        // Fade out to black
+        float elapsed = 0f;
+        while (elapsed < fadeOutDuration)
+        {
+            elapsed += Time.deltaTime;
+            float t = elapsed / fadeOutDuration;
+            fadeOverlay.color = new Color(0, 0, 0, t);
+            yield return null;
+        }
+        fadeOverlay.color = Color.black;
+        
+        // Wait a frame to ensure fade is rendered
+        yield return null;
+        
+        // Load Laminar Flow scene - the fade overlay will persist until scene loads
+        AsyncOperation loadOp = SceneManager.LoadSceneAsync(laminarFlowSceneName, LoadSceneMode.Single);
+        loadOp.allowSceneActivation = false;
+        
+        // Wait until scene is ready
+        while (loadOp.progress < 0.9f)
+        {
+            yield return null;
+        }
+        
+        // Activate the scene - this will destroy this object
+        loadOp.allowSceneActivation = true;
+        
+        isTransitioning = false;
+    }
+    
+    IEnumerator FadeIn()
+    {
+        if (fadeOverlay == null) yield break;
+        
+        fadeOverlay.color = Color.black;
+        
+        yield return new WaitForSeconds(0.5f);
+        
+        // Show panels instantly (no boot sequence when returning)
+        for (int i = 0; i < 4; i++)
+        {
+            if (feedFrames[i] != null)
+            {
+                feedFrames[i].color = frameColor;
+            }
+            if (feedPanels[i] != null)
+            {
+                feedPanels[i].color = (i == activeFeedIndex) ? dimmedColor : Color.white;
+            }
+        }
+        
+        float elapsed = 0f;
+        while (elapsed < fadeInDuration)
+        {
+            elapsed += Time.deltaTime;
+            float t = 1f - (elapsed / fadeInDuration);
+            fadeOverlay.color = new Color(0, 0, 0, t);
+            yield return null;
+        }
+        fadeOverlay.color = new Color(0, 0, 0, 0);
+        
+        isReturning = false;
     }
     
     IEnumerator BootSequence()
@@ -161,10 +503,6 @@ public class ConsoleController : MonoBehaviour
         foreach (var frame in feedFrames)
         {
             if (frame != null) frame.color = new Color(0, 0, 0, 0);
-        }
-        foreach (var label in feedLabels)
-        {
-            if (label != null) label.color = new Color(0, 0, 0, 0);
         }
         
         yield return new WaitForSeconds(0.5f);
@@ -209,482 +547,22 @@ public class ConsoleController : MonoBehaviour
                 feedPanels[i].color = targetColor;
             }
             
-            if (feedLabels[i] != null)
-            {
-                feedLabels[i].color = labelColor;
-            }
-            
             yield return new WaitForSeconds(0.15f);
         }
         
         isBooting = false;
-        bootTimer = 0f;
-    }
-    
-    void CreatePreviewIfNeeded()
-    {
-        // If no preview texture assigned, generate one
-        if (previewTexture == null)
-        {
-            GameObject genObj = new GameObject("PreviewGenerator");
-            genObj.transform.SetParent(transform);
-            previewGenerator = genObj.AddComponent<PreviewTextureGenerator>();
-            previewGenerator.width = 480;
-            previewGenerator.height = 270;
-            previewGenerator.animate = true;
-            previewGenerator.animationSpeed = 0.3f;
-            previewGenerator.GenerateTexture();
-            
-            // Use generated texture
-            previewTexture = previewGenerator.generatedTexture;
-        }
     }
     
     void OnDestroy()
     {
-        // Cleanup
-        foreach (var rt in staticTextures)
-        {
-            if (rt != null)
-            {
-                rt.Release();
-                Destroy(rt);
-            }
-        }
-        
-        if (whiteTexture != null) Destroy(whiteTexture);
-        if (staticMaterial != null) Destroy(staticMaterial);
-    }
-    
-    void CreateTextures()
-    {
-        whiteTexture = new Texture2D(1, 1);
-        whiteTexture.SetPixel(0, 0, Color.white);
-        whiteTexture.Apply();
-        
-        // Create static render textures
+        // Cleanup static textures
         for (int i = 0; i < 4; i++)
         {
-            if (i != activeFeedIndex)
+            if (staticTextures[i] != null)
             {
-                staticTextures[i] = new RenderTexture(256, 144, 0);
-                staticTextures[i].name = $"StaticRT_{i}";
-                staticTextures[i].Create();
+                Destroy(staticTextures[i]);
             }
         }
-    }
-    
-    void CreateStaticMaterial()
-    {
-        // Create a simple static noise material
-        Shader shader = Shader.Find("Hidden/Internal-Colored");
-        if (shader == null) shader = Shader.Find("Sprites/Default");
-        
-        staticMaterial = new Material(shader);
-    }
-    
-    void CreateUI()
-    {
-        // Create canvas
-        GameObject canvasObj = new GameObject("ConsoleCanvas");
-        canvasObj.transform.SetParent(transform);
-        canvas = canvasObj.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 50;
-        
-        CanvasScaler scaler = canvasObj.AddComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920, 1080);
-        
-        canvasObj.AddComponent<GraphicRaycaster>();
-        
-        // Background
-        GameObject bgObj = new GameObject("Background");
-        bgObj.transform.SetParent(canvas.transform);
-        Image bg = bgObj.AddComponent<Image>();
-        bg.color = consoleBackgroundColor;
-        bg.raycastTarget = false;
-        RectTransform bgRect = bgObj.GetComponent<RectTransform>();
-        bgRect.anchorMin = Vector2.zero;
-        bgRect.anchorMax = Vector2.one;
-        bgRect.offsetMin = Vector2.zero;
-        bgRect.offsetMax = Vector2.zero;
-        
-        // Create feed panels (2x2 grid)
-        for (int i = 0; i < 4; i++)
-        {
-            CreateFeedPanel(i);
-        }
-        
-        // Console title
-        CreateConsoleTitle();
-        
-        // Fade overlay (on top)
-        GameObject fadeObj = new GameObject("FadeOverlay");
-        fadeObj.transform.SetParent(canvas.transform);
-        fadeOverlay = fadeObj.AddComponent<Image>();
-        fadeOverlay.color = new Color(0, 0, 0, 0);
-        fadeOverlay.raycastTarget = false;
-        RectTransform fadeRect = fadeObj.GetComponent<RectTransform>();
-        fadeRect.anchorMin = Vector2.zero;
-        fadeRect.anchorMax = Vector2.one;
-        fadeRect.offsetMin = Vector2.zero;
-        fadeRect.offsetMax = Vector2.zero;
-    }
-    
-    void CreateFeedPanel(int index)
-    {
-        // Calculate position (2x2 grid)
-        int row = index / 2;
-        int col = index % 2;
-        
-        // Frame container
-        GameObject frameObj = new GameObject($"FeedFrame_{index}");
-        frameObj.transform.SetParent(canvas.transform);
-        feedFrames[index] = frameObj.AddComponent<Image>();
-        feedFrames[index].color = frameColor;
-        feedFrames[index].raycastTarget = false;
-        
-        // Feed panel (the actual image)
-        GameObject panelObj = new GameObject($"FeedPanel_{index}");
-        panelObj.transform.SetParent(frameObj.transform);
-        feedPanels[index] = panelObj.AddComponent<RawImage>();
-        feedPanels[index].raycastTarget = (index == activeFeedIndex);
-        
-        // Set initial texture
-        if (index == activeFeedIndex)
-        {
-            // Will be set later once preview is ready
-            feedPanels[index].color = dimmedColor;
-        }
-        else
-        {
-            feedPanels[index].texture = staticTextures[index];
-            feedPanels[index].color = Color.white;
-        }
-        
-        // Label
-        if (showLabels)
-        {
-            GameObject labelObj = new GameObject($"FeedLabel_{index}");
-            labelObj.transform.SetParent(frameObj.transform);
-            feedLabels[index] = labelObj.AddComponent<Text>();
-            feedLabels[index].font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            feedLabels[index].fontSize = 14;
-            feedLabels[index].color = labelColor;
-            feedLabels[index].alignment = TextAnchor.UpperLeft;
-            
-            // Camera numbering
-            string status = (index == activeFeedIndex) ? "● REC" : "○ NO SIGNAL";
-            feedLabels[index].text = $"CAM {index + 1:D2}  {status}";
-        }
-    }
-    
-    void CreateConsoleTitle()
-    {
-        GameObject titleObj = new GameObject("ConsoleTitle");
-        titleObj.transform.SetParent(canvas.transform);
-        
-        Text titleText = titleObj.AddComponent<Text>();
-        titleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        titleText.fontSize = 16;
-        titleText.color = new Color(0.3f, 0.4f, 0.3f, 0.7f);
-        titleText.alignment = TextAnchor.UpperLeft;
-        titleText.text = "SURVEILLANCE NETWORK v2.4.1    [RESTRICTED ACCESS]";
-        
-        RectTransform titleRect = titleObj.GetComponent<RectTransform>();
-        titleRect.anchorMin = new Vector2(0, 1);
-        titleRect.anchorMax = new Vector2(1, 1);
-        titleRect.pivot = new Vector2(0, 1);
-        titleRect.anchoredPosition = new Vector2(margin, -10);
-        titleRect.sizeDelta = new Vector2(-margin * 2, 30);
-    }
-    
-    void Update()
-    {
-        if (isTransitioning || isBooting) return;
-        
-        // Ensure preview texture is assigned
-        if (feedPanels[activeFeedIndex] != null && feedPanels[activeFeedIndex].texture == null)
-        {
-            if (previewGenerator != null && previewGenerator.generatedTexture != null)
-            {
-                feedPanels[activeFeedIndex].texture = previewGenerator.generatedTexture;
-            }
-            else if (previewTexture != null)
-            {
-                feedPanels[activeFeedIndex].texture = previewTexture;
-            }
-        }
-        
-        UpdateLayout();
-        UpdateStaticNoise();
-        UpdateHoverDetection();
-        UpdateFeedBrightness();
-        UpdateClickDetection();
-        UpdateTimestamp();
-    }
-    
-    private Text timestampText;
-    
-    void UpdateTimestamp()
-    {
-        // Update camera labels with fake timestamp
-        if (feedLabels[activeFeedIndex] != null)
-        {
-            System.DateTime now = System.DateTime.Now;
-            string timestamp = now.ToString("HH:mm:ss");
-            string status = "● REC";
-            feedLabels[activeFeedIndex].text = $"CAM {activeFeedIndex + 1:D2}  {status}  {timestamp}";
-        }
-    }
-    
-    void UpdateLayout()
-    {
-        float sw = Screen.width;
-        float sh = Screen.height;
-        
-        // Calculate available space for the 2x2 grid
-        float availableWidth = sw - (margin * 2) - gap;
-        float availableHeight = sh - (margin * 2) - gap - 40; // Extra space for title
-        
-        // Each panel gets half the available space (minus gap)
-        float panelWidth = (availableWidth - gap) / 2f;
-        float panelHeight = panelWidth / panelAspectRatio;
-        
-        // If too tall, scale down
-        float maxPanelHeight = (availableHeight - gap) / 2f;
-        if (panelHeight > maxPanelHeight)
-        {
-            panelHeight = maxPanelHeight;
-            panelWidth = panelHeight * panelAspectRatio;
-        }
-        
-        // Calculate grid starting position (centered)
-        float totalWidth = (panelWidth * 2) + gap;
-        float totalHeight = (panelHeight * 2) + gap;
-        float startX = (sw - totalWidth) / 2f;
-        float startY = (sh - totalHeight) / 2f + 20; // Slight offset for title
-        
-        // Position each panel
-        for (int i = 0; i < 4; i++)
-        {
-            int row = i / 2;
-            int col = i % 2;
-            
-            float x = startX + col * (panelWidth + gap);
-            float y = startY + (1 - row) * (panelHeight + gap); // Flip row for screen coords
-            
-            // Frame
-            RectTransform frameRect = feedFrames[i].GetComponent<RectTransform>();
-            frameRect.anchorMin = Vector2.zero;
-            frameRect.anchorMax = Vector2.zero;
-            frameRect.pivot = Vector2.zero;
-            frameRect.anchoredPosition = new Vector2(x - frameThickness, y - frameThickness);
-            frameRect.sizeDelta = new Vector2(panelWidth + frameThickness * 2, panelHeight + frameThickness * 2);
-            
-            // Panel (inside frame)
-            RectTransform panelRect = feedPanels[i].GetComponent<RectTransform>();
-            panelRect.anchorMin = Vector2.zero;
-            panelRect.anchorMax = Vector2.one;
-            panelRect.offsetMin = new Vector2(frameThickness, frameThickness);
-            panelRect.offsetMax = new Vector2(-frameThickness, -frameThickness);
-            
-            // Label
-            if (feedLabels[i] != null)
-            {
-                RectTransform labelRect = feedLabels[i].GetComponent<RectTransform>();
-                labelRect.anchorMin = new Vector2(0, 1);
-                labelRect.anchorMax = new Vector2(1, 1);
-                labelRect.pivot = new Vector2(0, 1);
-                labelRect.anchoredPosition = new Vector2(frameThickness + 8, -frameThickness - 8);
-                labelRect.sizeDelta = new Vector2(-16, 24);
-            }
-        }
-    }
-    
-    void UpdateStaticNoise()
-    {
-        // Generate static noise for inactive feeds
-        for (int i = 0; i < 4; i++)
-        {
-            if (i == activeFeedIndex) continue;
-            if (staticTextures[i] == null) continue;
-            
-            // Render static noise to texture
-            RenderTexture.active = staticTextures[i];
-            GL.Clear(true, true, staticBaseColor);
-            
-            // Draw noise pattern
-            GL.PushMatrix();
-            GL.LoadPixelMatrix(0, staticTextures[i].width, staticTextures[i].height, 0);
-            
-            // Simple noise pattern
-            float time = Time.time * staticSpeed;
-            System.Random rng = new System.Random((int)(time * 1000) + i * 12345);
-            
-            for (int y = 0; y < staticTextures[i].height; y += 2)
-            {
-                for (int x = 0; x < staticTextures[i].width; x += 2)
-                {
-                    float noise = (float)rng.NextDouble();
-                    
-                    // Add some horizontal banding
-                    float band = Mathf.Sin(y * 0.1f + time * 0.5f) * 0.1f;
-                    noise += band;
-                    
-                    if (noise > 0.7f)
-                    {
-                        Color c = Color.Lerp(staticBaseColor, staticNoiseColor, (noise - 0.7f) * 3f);
-                        DrawRect(x, y, 2, 2, c);
-                    }
-                }
-            }
-            
-            // Occasional scan line
-            int scanY = (int)((time * 50) % staticTextures[i].height);
-            DrawRect(0, scanY, staticTextures[i].width, 2, staticNoiseColor * 1.5f);
-            
-            GL.PopMatrix();
-            RenderTexture.active = null;
-        }
-    }
-    
-    void DrawRect(float x, float y, float w, float h, Color color)
-    {
-        GL.Begin(GL.QUADS);
-        GL.Color(color);
-        GL.Vertex3(x, y, 0);
-        GL.Vertex3(x + w, y, 0);
-        GL.Vertex3(x + w, y + h, 0);
-        GL.Vertex3(x, y + h, 0);
-        GL.End();
-    }
-    
-    void UpdateHoverDetection()
-    {
-        hoveredFeed = -1;
-        
-        if (feedPanels[activeFeedIndex] == null) return;
-        
-        Vector2 mousePos = Input.mousePosition;
-        RectTransform rect = feedPanels[activeFeedIndex].GetComponent<RectTransform>();
-        
-        if (RectTransformUtility.RectangleContainsScreenPoint(rect, mousePos))
-        {
-            hoveredFeed = activeFeedIndex;
-        }
-    }
-    
-    void UpdateFeedBrightness()
-    {
-        float dt = Time.deltaTime * hoverTransitionSpeed;
-        
-        for (int i = 0; i < 4; i++)
-        {
-            if (i == activeFeedIndex)
-            {
-                float target = (hoveredFeed == i) ? 1f : 0f;
-                feedBrightness[i] = Mathf.Lerp(feedBrightness[i], target, dt);
-                
-                Color c = Color.Lerp(dimmedColor, hoveredColor, feedBrightness[i]);
-                feedPanels[i].color = c;
-                
-                // Update cursor
-                if (hoveredFeed == i)
-                {
-                    Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
-                }
-            }
-        }
-    }
-    
-    void UpdateClickDetection()
-    {
-        if (Input.GetMouseButtonDown(0) && hoveredFeed == activeFeedIndex)
-        {
-            StartCoroutine(TransitionToLaminarFlow());
-        }
-    }
-    
-    IEnumerator TransitionToLaminarFlow()
-    {
-        isTransitioning = true;
-        
-        // Fade out
-        float elapsed = 0f;
-        while (elapsed < fadeOutDuration)
-        {
-            elapsed += Time.deltaTime;
-            float t = elapsed / fadeOutDuration;
-            fadeOverlay.color = new Color(0, 0, 0, t);
-            yield return null;
-        }
-        fadeOverlay.color = Color.black;
-        
-        // Hide console UI
-        canvas.gameObject.SetActive(false);
-        
-        // Load Laminar Flow scene additively
-        AsyncOperation loadOp = SceneManager.LoadSceneAsync(laminarFlowSceneName, LoadSceneMode.Single);
-        
-        while (!loadOp.isDone)
-        {
-            yield return null;
-        }
-        
-        isTransitioning = false;
-    }
-    
-    /// <summary>
-    /// Called when documentary phase ends to return to console
-    /// </summary>
-    public void ReturnFromDocumentary()
-    {
-        StartCoroutine(TransitionBackToConsole());
-    }
-    
-    IEnumerator TransitionBackToConsole()
-    {
-        isTransitioning = true;
-        isReturning = true;
-        
-        // Ensure we have a fade overlay
-        if (fadeOverlay != null)
-        {
-            fadeOverlay.color = Color.black;
-        }
-        
-        // Load console scene
-        AsyncOperation loadOp = SceneManager.LoadSceneAsync("Console", LoadSceneMode.Single);
-        
-        while (!loadOp.isDone)
-        {
-            yield return null;
-        }
-        
-        isTransitioning = false;
-    }
-    
-    IEnumerator FadeIn()
-    {
-        if (fadeOverlay == null) yield break;
-        
-        fadeOverlay.color = Color.black;
-        
-        yield return new WaitForSeconds(0.5f);
-        
-        float elapsed = 0f;
-        while (elapsed < fadeInDuration)
-        {
-            elapsed += Time.deltaTime;
-            float t = 1f - (elapsed / fadeInDuration);
-            fadeOverlay.color = new Color(0, 0, 0, t);
-            yield return null;
-        }
-        fadeOverlay.color = new Color(0, 0, 0, 0);
-        
-        isReturning = false;
     }
     
     void OnGUI()

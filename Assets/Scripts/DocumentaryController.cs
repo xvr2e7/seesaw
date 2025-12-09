@@ -9,7 +9,7 @@ using System.Collections;
 /// Shows split-screen: left = gameplay replay, right = documentary video.
 /// Both panels maintain 16:9 aspect ratio.
 /// 
-/// After documentary ends, fades back to Console scene.
+/// After documentary ends, automatically fades back to Console scene.
 /// </summary>
 public class DocumentaryController : MonoBehaviour
 {
@@ -60,7 +60,6 @@ public class DocumentaryController : MonoBehaviour
     private RawImage leftPanel;
     private RawImage rightPanel;
     private Image fadeOverlay;
-    private Text endPromptText;
     
     // Video
     private VideoPlayer videoPlayer;
@@ -143,7 +142,7 @@ public class DocumentaryController : MonoBehaviour
         canvasObj.AddComponent<CanvasScaler>();
         canvasObj.AddComponent<GraphicRaycaster>();
         
-        // Background
+        // Background (solid black)
         GameObject bgObj = new GameObject("Background");
         bgObj.transform.SetParent(canvas.transform);
         Image bg = bgObj.AddComponent<Image>();
@@ -168,23 +167,6 @@ public class DocumentaryController : MonoBehaviour
         rightPanel = rightObj.AddComponent<RawImage>();
         rightPanel.color = Color.white;
         rightPanel.raycastTarget = false;
-        
-        // End prompt text
-        GameObject promptObj = new GameObject("EndPrompt");
-        promptObj.transform.SetParent(canvas.transform);
-        endPromptText = promptObj.AddComponent<Text>();
-        endPromptText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        endPromptText.fontSize = 18;
-        endPromptText.color = new Color(0.6f, 0.6f, 0.6f, 0f);
-        endPromptText.alignment = TextAnchor.LowerCenter;
-        endPromptText.text = "Press ESC to return";
-        
-        RectTransform promptRect = promptObj.GetComponent<RectTransform>();
-        promptRect.anchorMin = new Vector2(0, 0);
-        promptRect.anchorMax = new Vector2(1, 0);
-        promptRect.pivot = new Vector2(0.5f, 0);
-        promptRect.anchoredPosition = new Vector2(0, 30);
-        promptRect.sizeDelta = new Vector2(0, 40);
         
         // Fade overlay (on top)
         GameObject fadeObj = new GameObject("FadeOverlay");
@@ -228,102 +210,64 @@ public class DocumentaryController : MonoBehaviour
         videoPlayer.Prepare();
     }
     
-    void OnVideoEnded(VideoPlayer vp)
-    {
-        videoEnded = true;
-        Debug.Log("[Documentary] Video playback ended");
-        
-        if (returnToConsole)
-        {
-            StartCoroutine(ReturnToConsoleAfterDelay());
-        }
-    }
-    
-    IEnumerator ReturnToConsoleAfterDelay()
-    {
-        // Show prompt
-        float promptFadeTime = 1f;
-        float elapsed = 0f;
-        while (elapsed < promptFadeTime)
-        {
-            elapsed += Time.deltaTime;
-            float alpha = elapsed / promptFadeTime;
-            endPromptText.color = new Color(0.6f, 0.6f, 0.6f, alpha * 0.8f);
-            yield return null;
-        }
-        
-        // Wait for delay or user input
-        float waitTime = 0f;
-        while (waitTime < endDelay)
-        {
-            if (Input.GetKeyDown(returnKey))
-            {
-                break;
-            }
-            waitTime += Time.deltaTime;
-            yield return null;
-        }
-        
-        // Return to console
-        ReturnToConsole();
-    }
-    
     void CreateReplayCamera()
     {
-        // Render texture
+        // Create render texture for replay
         replayRT = new RenderTexture(1920, 1080, 24);
         replayRT.name = "ReplayRT";
         
-        // Camera
+        // Create camera
         GameObject camObj = new GameObject("ReplayCamera");
         camObj.transform.SetParent(transform);
         replayCamera = camObj.AddComponent<Camera>();
-        replayCamera.targetTexture = replayRT;
         replayCamera.enabled = false;
+        replayCamera.targetTexture = replayRT;
+        replayCamera.clearFlags = CameraClearFlags.SolidColor;
+        replayCamera.backgroundColor = Color.black;
     }
     
     void CreateCursor()
     {
         cursorObject = new GameObject("ReplayCursor");
         cursorObject.transform.SetParent(transform);
-        cursorObject.SetActive(false);
         
         cursorRing = cursorObject.AddComponent<LineRenderer>();
         cursorRing.useWorldSpace = true;
         cursorRing.loop = true;
-        cursorRing.positionCount = 64;
         cursorRing.startWidth = cursorThickness;
         cursorRing.endWidth = cursorThickness;
         cursorRing.material = new Material(Shader.Find("Sprites/Default"));
         cursorRing.startColor = cursorColor;
         cursorRing.endColor = cursorColor;
-        cursorRing.sortingOrder = 100;
+        
+        // Create circle
+        int segments = 32;
+        cursorRing.positionCount = segments;
+        
+        cursorObject.SetActive(false);
     }
     
     #endregion
     
-    #region Playback Control
+    #region Documentary Control
     
     public void StartDocumentary()
     {
         if (isActive) return;
         
-        // Get replay duration
-        if (inputRecorder != null && inputRecorder.Metadata != null)
+        Debug.Log("[Documentary] Starting documentary phase");
+        
+        // Get replay duration from recorder
+        if (inputRecorder != null && inputRecorder.RecordedFrames.Count > 0)
         {
-            replayDuration = inputRecorder.Metadata.sessionDuration;
-        }
-        else if (inputRecorder != null && inputRecorder.RecordedFrames.Count > 0)
-        {
-            var frames = inputRecorder.RecordedFrames;
-            replayDuration = frames[frames.Count - 1].timestamp;
+            replayDuration = inputRecorder.GetRecordingDuration();
         }
         else
         {
-            replayDuration = 60f;
+            replayDuration = 60f; // Default fallback
         }
         
-        Debug.Log($"[Documentary] Starting. Replay duration: {replayDuration:F1}s");
+        Debug.Log($"[Documentary] Replay duration: {replayDuration:F1}s");
         
         videoEnded = false;
         StartCoroutine(TransitionIn());
@@ -334,7 +278,6 @@ public class DocumentaryController : MonoBehaviour
         // Show canvas with black overlay
         canvas.gameObject.SetActive(true);
         fadeOverlay.color = Color.black;
-        endPromptText.color = new Color(0.6f, 0.6f, 0.6f, 0f);
         
         // Wait a moment
         yield return new WaitForSeconds(0.2f);
@@ -347,6 +290,8 @@ public class DocumentaryController : MonoBehaviour
         {
             replayCamera.CopyFrom(mainCamera);
             replayCamera.targetTexture = replayRT;
+            replayCamera.clearFlags = CameraClearFlags.SolidColor;
+            replayCamera.backgroundColor = Color.black;
         }
         
         // Assign textures to panels
@@ -406,6 +351,26 @@ public class DocumentaryController : MonoBehaviour
         Debug.Log("[Documentary] Game paused");
     }
     
+    void OnVideoEnded(VideoPlayer vp)
+    {
+        videoEnded = true;
+        Debug.Log("[Documentary] Video playback ended");
+        
+        if (returnToConsole)
+        {
+            StartCoroutine(ReturnToConsoleAfterDelay());
+        }
+    }
+    
+    IEnumerator ReturnToConsoleAfterDelay()
+    {
+        // Wait for the specified delay
+        yield return new WaitForSeconds(endDelay);
+        
+        // Auto-return to console
+        ReturnToConsole();
+    }
+    
     public void ReturnToConsole()
     {
         if (isReturningToConsole) return;
@@ -418,7 +383,7 @@ public class DocumentaryController : MonoBehaviour
     {
         Debug.Log("[Documentary] Returning to console...");
         
-        // Fade out
+        // Fade out to black
         float elapsed = 0f;
         while (elapsed < returnFadeDuration)
         {
@@ -429,14 +394,30 @@ public class DocumentaryController : MonoBehaviour
         }
         fadeOverlay.color = Color.black;
         
+        // Wait a frame to ensure black is rendered
+        yield return null;
+        
         // Stop video
         if (videoPlayer != null)
         {
             videoPlayer.Stop();
         }
         
+        // Notify ConsoleController that we're returning
+        ConsoleController.SetReturningFromDocumentary();
+        
         // Load console scene
-        SceneManager.LoadScene(consoleSceneName);
+        AsyncOperation loadOp = SceneManager.LoadSceneAsync(consoleSceneName, LoadSceneMode.Single);
+        loadOp.allowSceneActivation = false;
+        
+        // Wait until scene is ready
+        while (loadOp.progress < 0.9f)
+        {
+            yield return null;
+        }
+        
+        // Activate the scene
+        loadOp.allowSceneActivation = true;
     }
     
     #endregion
@@ -493,7 +474,7 @@ public class DocumentaryController : MonoBehaviour
         float panelWidth = availableWidth / 2f;
         float panelHeight = panelWidth / panelAspectRatio;
         
-        // If too tall, scale down
+        // If too tall, scale down to fit height
         if (panelHeight > availableHeight)
         {
             panelHeight = availableHeight;
@@ -524,127 +505,65 @@ public class DocumentaryController : MonoBehaviour
     
     void UpdateReplay()
     {
-        if (inputRecorder == null || inputRecorder.RecordedFrames.Count == 0)
-        {
-            // No recorded data - just render current view
-            if (replayCamera != null)
-            {
-                replayCamera.Render();
-            }
-            return;
-        }
+        if (inputRecorder == null || inputRecorder.RecordedFrames.Count == 0) return;
         
-        // Calculate replay time (loop if video is still playing)
         float elapsed = Time.time - startTime;
-        float replayTime;
+        float normalizedTime = elapsed / replayDuration;
         
-        if (!videoEnded)
-        {
-            replayTime = replayDuration > 0 ? (elapsed % replayDuration) : elapsed;
-        }
-        else
-        {
-            // Hold at end
-            replayTime = replayDuration;
-        }
+        // Get replay frame
+        InputFrame frame = inputRecorder.GetInterpolatedFrameAtTime(elapsed);
         
-        // Get frame data
-        InputFrame frame = inputRecorder.GetInterpolatedFrameAtTime(replayTime);
-        
-        // Update cursor
+        // Update cursor position
         UpdateCursor(frame);
         
-        // Update replay camera position
-        if (replayCamera != null && mainCamera != null)
-        {
-            if (frame.cameraViewport.width > 0)
-            {
-                replayCamera.transform.position = new Vector3(
-                    frame.cameraPosition.x,
-                    frame.cameraPosition.y,
-                    mainCamera.transform.position.z
-                );
-            }
-            
-            replayCamera.orthographic = mainCamera.orthographic;
-            replayCamera.orthographicSize = mainCamera.orthographicSize;
-            
-            // Render
-            replayCamera.Render();
-        }
+        // Render replay frame
+        replayCamera.enabled = true;
+        replayCamera.Render();
+        replayCamera.enabled = false;
     }
     
     void UpdateCursor(InputFrame frame)
     {
         if (cursorRing == null) return;
         
-        // Color - brighter when tool was active
-        Color color = cursorColor;
-        if (frame.toolActive)
-        {
-            color.a = 0.9f;
-            float pulse = 0.8f + 0.2f * Mathf.Sin(Time.time * 8f);
-            cursorRing.startWidth = cursorThickness * pulse * 1.5f;
-            cursorRing.endWidth = cursorThickness * pulse * 1.5f;
-        }
-        else
-        {
-            color.a = 0.5f;
-            cursorRing.startWidth = cursorThickness;
-            cursorRing.endWidth = cursorThickness;
-        }
+        // Set cursor color based on tool state
+        Color c = frame.toolActive ? cursorColor : new Color(cursorColor.r, cursorColor.g, cursorColor.b, 0.3f);
+        cursorRing.startColor = c;
+        cursorRing.endColor = c;
         
-        cursorRing.startColor = color;
-        cursorRing.endColor = color;
-        
-        // Draw ring
+        // Update circle positions
         float radius = frame.toolRadius;
-        for (int i = 0; i < 64; i++)
+        int segments = cursorRing.positionCount;
+        
+        for (int i = 0; i < segments; i++)
         {
-            float angle = (float)i / 64f * Mathf.PI * 2f;
-            float x = frame.cursorWorldPosition.x + Mathf.Cos(angle) * radius;
-            float y = frame.cursorWorldPosition.y + Mathf.Sin(angle) * radius;
-            cursorRing.SetPosition(i, new Vector3(x, y, -5f));
+            float angle = (float)i / segments * Mathf.PI * 2f;
+            Vector3 pos = new Vector3(
+                frame.cursorWorldPosition.x + Mathf.Cos(angle) * radius,
+                frame.cursorWorldPosition.y + Mathf.Sin(angle) * radius,
+                -5f
+            );
+            cursorRing.SetPosition(i, pos);
         }
     }
     
     #endregion
-    
-    #region Debug
     
     void OnGUI()
     {
         if (!showDebugInfo || !isActive) return;
         
-        GUILayout.BeginArea(new Rect(10, 10, 300, 180));
+        GUILayout.BeginArea(new Rect(10, 10, 250, 150));
         GUI.color = new Color(0, 0, 0, 0.8f);
-        GUI.DrawTexture(new Rect(0, 0, 300, 180), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(0, 0, 250, 150), Texture2D.whiteTexture);
         GUI.color = Color.white;
         
         GUILayout.Label("=== DOCUMENTARY ===");
-        
-        float elapsed = Time.time - startTime;
-        float replayTime = replayDuration > 0 ? (elapsed % replayDuration) : elapsed;
-        
-        GUILayout.Label($"Elapsed: {elapsed:F1}s");
-        GUILayout.Label($"Replay: {replayTime:F1}s / {replayDuration:F1}s");
-        
-        if (videoPlayer != null)
-        {
-            GUILayout.Label($"Video: {videoPlayer.time:F1}s / {videoPlayer.length:F1}s");
-            GUILayout.Label($"Video Playing: {videoPlayer.isPlaying}");
-            GUILayout.Label($"Video Ended: {videoEnded}");
-        }
-        
-        if (inputRecorder != null)
-        {
-            GUILayout.Label($"Recorded Frames: {inputRecorder.RecordedFrames.Count}");
-        }
-        
-        GUILayout.Label($"Press ESC to return to console");
-        
+        GUILayout.Label($"Active: {isActive}");
+        GUILayout.Label($"Video Ended: {videoEnded}");
+        GUILayout.Label($"Elapsed: {(Time.time - startTime):F1}s");
+        GUILayout.Label($"Replay Duration: {replayDuration:F1}s");
+        GUILayout.Label($"Press {returnKey} to return");
         GUILayout.EndArea();
     }
-    
-    #endregion
 }

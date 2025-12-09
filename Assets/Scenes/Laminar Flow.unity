@@ -243,24 +243,17 @@ MonoBehaviour:
   gameManager: {fileID: 1718674880}
   playerTool: {fileID: 1382237307}
   flowSimulation: {fileID: 1382237305}
-  mainCamera: {fileID: 2057931241}
-  baseVignetteIntensity: 0.15
-  maxDivergenceVignette: 0.5
-  criticalDivergence: 1.5
-  vignetteSmoothing: 3
-  normalVignetteColor: {r: 0, g: 0, b: 0, a: 1}
-  alertVignetteColor: {r: 0.3, g: 0, b: 0, a: 1}
-  energyBarHeight: 3
-  energyBarMargin: 20
-  energyFullColor: {r: 0.4, g: 0.7, b: 0.5, a: 0.6}
-  energyLowColor: {r: 0.8, g: 0.3, b: 0.2, a: 0.8}
-  energyDepletedColor: {r: 0.3, g: 0.1, b: 0.1, a: 0.4}
-  progressIndicatorSize: 40
-  progressColor: {r: 0.5, g: 0.5, b: 0.5, a: 0.3}
+  rightMargin: 20
+  topOffset: 170
+  divergenceBarWidth: 140
+  divergenceBarHeight: 8
+  maxDisplayDivergence: 2
+  textColor: {r: 0.85, g: 0.85, b: 0.85, a: 0.9}
+  barBackgroundColor: {r: 0.15, g: 0.15, b: 0.15, a: 0.8}
+  barFillColorLow: {r: 0.3, g: 0.7, b: 0.4, a: 0.9}
+  barFillColorHigh: {r: 0.9, g: 0.3, b: 0.2, a: 0.9}
+  panelBackgroundColor: {r: 0.05, g: 0.05, b: 0.05, a: 0.75}
   scoreTransitionDuration: 2
-  spectrumLowColor: {r: 0.8, g: 0.2, b: 0.2, a: 1}
-  spectrumMidColor: {r: 0.7, g: 0.7, b: 0.3, a: 1}
-  spectrumHighColor: {r: 0.2, g: 0.7, b: 0.4, a: 1}
   fadeInDuration: 1.5
   fadeOutDuration: 1
 --- !u!1 &1382237302
@@ -419,7 +412,10 @@ MonoBehaviour:
   ringColorFull: {r: 0.9, g: 0.95, b: 1, a: 0.8}
   ringColorLow: {r: 1, g: 0.6, b: 0.3, a: 0.6}
   ringColorDepleted: {r: 0.5, g: 0.3, b: 0.3, a: 0.3}
+  energyRingColor: {r: 0.4, g: 0.8, b: 0.5, a: 0.7}
+  energyRingColorLow: {r: 0.9, g: 0.4, b: 0.2, a: 0.7}
   ringThicknessFraction: 0.03
+  energyRingOffset: 0.4
   showDebugInfo: 0
 --- !u!114 &1382237308
 MonoBehaviour:
@@ -627,6 +623,66 @@ MonoBehaviour:
   m_LightCookieSize: {x: 1, y: 1}
   m_LightCookieOffset: {x: 0, y: 0}
   m_SoftShadowQuality: 0
+--- !u!1 &1797351077
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1797351079}
+  - component: {fileID: 1797351078}
+  m_Layer: 0
+  m_Name: Documentary
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1797351078
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1797351077}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e4017934a9c1d3949a5ee66cda79b0e8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  gameManager: {fileID: 1718674880}
+  inputRecorder: {fileID: 755271954}
+  flowSimulation: {fileID: 1382237305}
+  flowVisualizer: {fileID: 1382237306}
+  mainCamera: {fileID: 2057931241}
+  videoFileName: demo.mp4
+  cinematicAspectRatio: 2.39
+  letterboxColor: {r: 0, g: 0, b: 0, a: 1}
+  fadeInDuration: 2
+  playbackDelay: 0.5
+  panelGap: 4
+  dividerColor: {r: 0.1, g: 0.1, b: 0.1, a: 1}
+  cursorIdleColor: {r: 0.6, g: 0.6, b: 0.6, a: 0.5}
+  cursorActiveColor: {r: 1, g: 0.35, b: 0.25, a: 0.85}
+  cursorRingThickness: 0.25
+  showDebugInfo: 0
+--- !u!4 &1797351079
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1797351077}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1940927232
 GameObject:
   m_ObjectHideFlags: 0
@@ -897,3 +953,4 @@ SceneRoots:
   - {fileID: 1940927233}
   - {fileID: 1718674881}
   - {fileID: 755271955}
+  - {fileID: 1797351079}

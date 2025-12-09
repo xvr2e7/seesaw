@@ -1,12 +1,15 @@
 using UnityEngine;
 using UnityEngine.Video;
 using UnityEngine.UI;
+using UnityEngine.SceneManagement;
 using System.Collections;
 
 /// <summary>
 /// Documentary phase controller for Laminar Flow.
 /// Shows split-screen: left = gameplay replay, right = documentary video.
 /// Both panels maintain 16:9 aspect ratio.
+/// 
+/// After documentary ends, fades back to Console scene.
 /// </summary>
 public class DocumentaryController : MonoBehaviour
 {
@@ -34,19 +37,35 @@ public class DocumentaryController : MonoBehaviour
     public Color cursorColor = new Color(1f, 0.4f, 0.3f, 0.8f);
     public float cursorThickness = 0.3f;
     
+    [Header("End Behavior")]
+    [Tooltip("Return to console scene after documentary ends")]
+    public bool returnToConsole = true;
+    
+    [Tooltip("Name of the console scene")]
+    public string consoleSceneName = "Console";
+    
+    [Tooltip("Delay after video ends before returning to console")]
+    public float endDelay = 2f;
+    
+    [Tooltip("Fade duration when returning to console")]
+    public float returnFadeDuration = 2f;
+    
     [Header("Debug")]
     public bool showDebugInfo = false;
     public KeyCode skipKey = KeyCode.F12;
+    public KeyCode returnKey = KeyCode.Escape;
     
     // UI
     private Canvas canvas;
     private RawImage leftPanel;
     private RawImage rightPanel;
     private Image fadeOverlay;
+    private Text endPromptText;
     
     // Video
     private VideoPlayer videoPlayer;
     private RenderTexture videoRT;
+    private bool videoEnded = false;
     
     // Replay
     private RenderTexture replayRT;
@@ -58,6 +77,7 @@ public class DocumentaryController : MonoBehaviour
     private bool isActive = false;
     private float startTime;
     private float replayDuration;
+    private bool isReturningToConsole = false;
     
     void Start()
     {
@@ -82,6 +102,11 @@ public class DocumentaryController : MonoBehaviour
         if (gameManager != null)
         {
             gameManager.OnStateChanged -= OnGameStateChanged;
+        }
+        
+        if (videoPlayer != null)
+        {
+            videoPlayer.loopPointReached -= OnVideoEnded;
         }
         
         if (videoRT != null) { videoRT.Release(); Destroy(videoRT); }
@@ -144,6 +169,23 @@ public class DocumentaryController : MonoBehaviour
         rightPanel.color = Color.white;
         rightPanel.raycastTarget = false;
         
+        // End prompt text
+        GameObject promptObj = new GameObject("EndPrompt");
+        promptObj.transform.SetParent(canvas.transform);
+        endPromptText = promptObj.AddComponent<Text>();
+        endPromptText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        endPromptText.fontSize = 18;
+        endPromptText.color = new Color(0.6f, 0.6f, 0.6f, 0f);
+        endPromptText.alignment = TextAnchor.LowerCenter;
+        endPromptText.text = "Press ESC to return";
+        
+        RectTransform promptRect = promptObj.GetComponent<RectTransform>();
+        promptRect.anchorMin = new Vector2(0, 0);
+        promptRect.anchorMax = new Vector2(1, 0);
+        promptRect.pivot = new Vector2(0.5f, 0);
+        promptRect.anchoredPosition = new Vector2(0, 30);
+        promptRect.sizeDelta = new Vector2(0, 40);
+        
         // Fade overlay (on top)
         GameObject fadeObj = new GameObject("FadeOverlay");
         fadeObj.transform.SetParent(canvas.transform);
@@ -164,8 +206,11 @@ public class DocumentaryController : MonoBehaviour
         
         videoPlayer = obj.AddComponent<VideoPlayer>();
         videoPlayer.playOnAwake = false;
-        videoPlayer.isLooping = true;
+        videoPlayer.isLooping = false; // Don't loop - we want to detect end
         videoPlayer.renderMode = VideoRenderMode.RenderTexture;
+        
+        // Subscribe to video end
+        videoPlayer.loopPointReached += OnVideoEnded;
         
         // Audio
         videoPlayer.audioOutputMode = VideoAudioOutputMode.AudioSource;
@@ -181,6 +226,46 @@ public class DocumentaryController : MonoBehaviour
         string path = System.IO.Path.Combine(Application.streamingAssetsPath, videoFileName);
         videoPlayer.url = path;
         videoPlayer.Prepare();
+    }
+    
+    void OnVideoEnded(VideoPlayer vp)
+    {
+        videoEnded = true;
+        Debug.Log("[Documentary] Video playback ended");
+        
+        if (returnToConsole)
+        {
+            StartCoroutine(ReturnToConsoleAfterDelay());
+        }
+    }
+    
+    IEnumerator ReturnToConsoleAfterDelay()
+    {
+        // Show prompt
+        float promptFadeTime = 1f;
+        float elapsed = 0f;
+        while (elapsed < promptFadeTime)
+        {
+            elapsed += Time.deltaTime;
+            float alpha = elapsed / promptFadeTime;
+            endPromptText.color = new Color(0.6f, 0.6f, 0.6f, alpha * 0.8f);
+            yield return null;
+        }
+        
+        // Wait for delay or user input
+        float waitTime = 0f;
+        while (waitTime < endDelay)
+        {
+            if (Input.GetKeyDown(returnKey))
+            {
+                break;
+            }
+            waitTime += Time.deltaTime;
+            yield return null;
+        }
+        
+        // Return to console
+        ReturnToConsole();
     }
     
     void CreateReplayCamera()
@@ -240,6 +325,7 @@ public class DocumentaryController : MonoBehaviour
         
         Debug.Log($"[Documentary] Starting. Replay duration: {replayDuration:F1}s");
         
+        videoEnded = false;
         StartCoroutine(TransitionIn());
     }
     
@@ -248,6 +334,7 @@ public class DocumentaryController : MonoBehaviour
         // Show canvas with black overlay
         canvas.gameObject.SetActive(true);
         fadeOverlay.color = Color.black;
+        endPromptText.color = new Color(0.6f, 0.6f, 0.6f, 0f);
         
         // Wait a moment
         yield return new WaitForSeconds(0.2f);
@@ -319,6 +406,39 @@ public class DocumentaryController : MonoBehaviour
         Debug.Log("[Documentary] Game paused");
     }
     
+    public void ReturnToConsole()
+    {
+        if (isReturningToConsole) return;
+        
+        isReturningToConsole = true;
+        StartCoroutine(TransitionToConsole());
+    }
+    
+    IEnumerator TransitionToConsole()
+    {
+        Debug.Log("[Documentary] Returning to console...");
+        
+        // Fade out
+        float elapsed = 0f;
+        while (elapsed < returnFadeDuration)
+        {
+            elapsed += Time.deltaTime;
+            float t = elapsed / returnFadeDuration;
+            fadeOverlay.color = new Color(0, 0, 0, t);
+            yield return null;
+        }
+        fadeOverlay.color = Color.black;
+        
+        // Stop video
+        if (videoPlayer != null)
+        {
+            videoPlayer.Stop();
+        }
+        
+        // Load console scene
+        SceneManager.LoadScene(consoleSceneName);
+    }
+    
     #endregion
     
     #region Update
@@ -343,6 +463,12 @@ public class DocumentaryController : MonoBehaviour
             }
             
             StartDocumentary();
+        }
+        
+        // Return key during documentary
+        if (isActive && Input.GetKeyDown(returnKey))
+        {
+            ReturnToConsole();
         }
         
         if (!isActive) return;
@@ -408,9 +534,19 @@ public class DocumentaryController : MonoBehaviour
             return;
         }
         
-        // Calculate replay time (loop)
+        // Calculate replay time (loop if video is still playing)
         float elapsed = Time.time - startTime;
-        float replayTime = replayDuration > 0 ? (elapsed % replayDuration) : elapsed;
+        float replayTime;
+        
+        if (!videoEnded)
+        {
+            replayTime = replayDuration > 0 ? (elapsed % replayDuration) : elapsed;
+        }
+        else
+        {
+            // Hold at end
+            replayTime = replayDuration;
+        }
         
         // Get frame data
         InputFrame frame = inputRecorder.GetInterpolatedFrameAtTime(replayTime);
@@ -480,9 +616,9 @@ public class DocumentaryController : MonoBehaviour
     {
         if (!showDebugInfo || !isActive) return;
         
-        GUILayout.BeginArea(new Rect(10, 10, 300, 150));
+        GUILayout.BeginArea(new Rect(10, 10, 300, 180));
         GUI.color = new Color(0, 0, 0, 0.8f);
-        GUI.DrawTexture(new Rect(0, 0, 300, 150), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(0, 0, 300, 180), Texture2D.whiteTexture);
         GUI.color = Color.white;
         
         GUILayout.Label("=== DOCUMENTARY ===");
@@ -497,12 +633,15 @@ public class DocumentaryController : MonoBehaviour
         {
             GUILayout.Label($"Video: {videoPlayer.time:F1}s / {videoPlayer.length:F1}s");
             GUILayout.Label($"Video Playing: {videoPlayer.isPlaying}");
+            GUILayout.Label($"Video Ended: {videoEnded}");
         }
         
         if (inputRecorder != null)
         {
             GUILayout.Label($"Recorded Frames: {inputRecorder.RecordedFrames.Count}");
         }
+        
+        GUILayout.Label($"Press ESC to return to console");
         
         GUILayout.EndArea();
     }

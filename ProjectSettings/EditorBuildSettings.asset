@@ -6,6 +6,9 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/Scenes/Cyclorama.unity
-    guid: 99c9720ab356a0642a771bea13969a05
+    path: Assets/Scenes/Console.unity
+    guid: 0df5087c7167d6b40b0c9385ee3f5dc7
+  - enabled: 1
+    path: Assets/Scenes/Laminar Flow.unity
+    guid: 191d721d58b955445bf548fcdbb0744a
   m_configObjects: {}

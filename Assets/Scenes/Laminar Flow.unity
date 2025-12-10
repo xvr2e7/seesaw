@@ -373,10 +373,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   flowSimulation: {fileID: 1382237305}
   mainCamera: {fileID: 2057931241}
-  toolRadius: 5
-  minRadius: 2
-  maxRadius: 25
-  scrollSensitivity: 2
+  toolRadius: 3
+  minRadius: 1
+  maxRadius: 5
+  scrollSensitivity: 0.4
   baseDampeningStrength: 0.5
   maxDampeningStrength: 1
   rampUpTime: 1.5

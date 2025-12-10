@@ -6,9 +6,9 @@ using UnityEngine;
 /// - Circular: peaceful assembly forming a circle
 /// - Scatter: panic, people running in all directions
 /// - Vortex: crowd swirling around a focal point
-/// - Convergence: people gathering toward a location
-/// - Divergence: dispersal from a point
 /// - Wave: coordinated movement like a march
+/// - Oscillation: back-and-forth movement
+/// - Cluster: sit-in or blockade
 /// </summary>
 [System.Serializable]
 public class TurbulenceEvent
@@ -18,8 +18,6 @@ public class TurbulenceEvent
         Circular,       // Agents orbit around a center point
         Scatter,        // Agents pushed outward randomly
         Vortex,         // Spinning motion with inward pull
-        Convergence,    // Agents pulled toward center
-        Divergence,     // Agents pushed away from center
         Wave,           // Directional wave pattern
         Oscillation,    // Back-and-forth movement
         Cluster         // Agents cluster and slow down
@@ -100,43 +98,33 @@ public class TurbulenceEvent
                 // Orbit around center
                 force = tangent * strength;
                 break;
-                
+
             case PatternType.Scatter:
                 // Random outward push with noise
                 float noiseAngle = Mathf.PerlinNoise(agentPos.x * 0.1f + phase, agentPos.y * 0.1f) * Mathf.PI * 2f;
                 Vector2 noiseDir = new Vector2(Mathf.Cos(noiseAngle), Mathf.Sin(noiseAngle));
                 force = (-dirToCenter * 0.5f + noiseDir * 0.5f).normalized * strength;
                 break;
-                
+
             case PatternType.Vortex:
                 // Spiral inward while rotating
                 float spiralStrength = Mathf.Sin(phase) * 0.3f + 0.7f;
                 force = (tangent * 0.8f + dirToCenter * 0.2f * spiralStrength) * strength;
                 break;
-                
-            case PatternType.Convergence:
-                // Pull toward center
-                force = dirToCenter * strength;
-                break;
-                
-            case PatternType.Divergence:
-                // Push away from center
-                force = -dirToCenter * strength;
-                break;
-                
+
             case PatternType.Wave:
                 // Sinusoidal wave in specified direction
                 float wavePhase = Vector2.Dot(agentPos, direction.normalized) * 0.2f + phase;
                 float waveForce = Mathf.Sin(wavePhase);
                 force = direction.normalized * waveForce * strength;
                 break;
-                
+
             case PatternType.Oscillation:
                 // Back and forth movement
                 float oscPhase = Mathf.Sin(phase + dist * 0.1f);
                 force = direction.normalized * oscPhase * strength;
                 break;
-                
+
             case PatternType.Cluster:
                 // Slow down and cluster (negative force opposing velocity)
                 // This is handled specially in the simulation - here we apply inward pull

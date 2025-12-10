@@ -2,13 +2,12 @@ using UnityEngine;
 
 /// <summary>
 /// Clean, integrated UI for game state feedback.
-/// 
+///
 /// Elements:
 /// - Divergence: Number + bar displayed below existing radar (top-right)
-/// - Time: Simple timer below divergence
 /// - Energy: Radial ring around cursor (handled in PlayerToolController)
 /// - Final score: Clean centered display
-/// 
+///
 /// Designed to integrate with existing TurbulenceIndicatorUI radar.
 /// </summary>
 public class GameStateUI : MonoBehaviour
@@ -57,7 +56,6 @@ public class GameStateUI : MonoBehaviour
     // Cached
     private Texture2D whiteTexture;
     private GUIStyle labelStyle;
-    private GUIStyle timerStyle;
     private GUIStyle scoreStyle;
     private GUIStyle scoreLabelStyle;
     private bool stylesInitialized = false;
@@ -98,15 +96,7 @@ public class GameStateUI : MonoBehaviour
             alignment = TextAnchor.MiddleLeft
         };
         labelStyle.normal.textColor = textColor;
-        
-        timerStyle = new GUIStyle(GUI.skin.label)
-        {
-            fontSize = 14,
-            fontStyle = FontStyle.Normal,
-            alignment = TextAnchor.MiddleRight
-        };
-        timerStyle.normal.textColor = textColor;
-        
+
         scoreStyle = new GUIStyle(GUI.skin.label)
         {
             fontSize = 48,
@@ -227,7 +217,7 @@ public class GameStateUI : MonoBehaviour
         float panelX = sw - rightMargin - divergenceBarWidth - 20f;
         float panelY = topOffset;
         float panelWidth = divergenceBarWidth + 20f;
-        float panelHeight = 60f;
+        float panelHeight = 42f;
         
         // Panel background
         GUI.color = panelBackgroundColor;
@@ -255,19 +245,6 @@ public class GameStateUI : MonoBehaviour
         GUI.DrawTexture(new Rect(contentX, currentY, divergenceBarWidth * fillRatio, divergenceBarHeight), whiteTexture);
         GUI.color = Color.white;
         
-        currentY += divergenceBarHeight + 8f;
-        
-        // Time display
-        if (gameManager != null)
-        {
-            float timeRemaining = gameManager.maxSessionDuration - gameManager.SessionTime;
-            timeRemaining = Mathf.Max(0f, timeRemaining);
-            int minutes = Mathf.FloorToInt(timeRemaining / 60f);
-            int seconds = Mathf.FloorToInt(timeRemaining % 60f);
-            string timeText = $"{minutes:D2}:{seconds:D2}";
-            
-            GUI.Label(new Rect(contentX, currentY, divergenceBarWidth, 16f), timeText, timerStyle);
-        }
     }
     
     void DrawFadeOverlay()

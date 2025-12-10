@@ -25,7 +25,7 @@ public class PlayerToolController : MonoBehaviour
     public float maxRadius = 25f;
     
     [Tooltip("How fast scroll wheel changes radius")]
-    public float scrollSensitivity = 2f;
+    public float scrollSensitivity = 0.5f;
     
     [Tooltip("Base dampening strength")]
     [Range(0.1f, 1f)]
@@ -416,17 +416,23 @@ public class PlayerToolController : MonoBehaviour
     public void SetToolEnabled(bool enabled)
     {
         toolEnabled = enabled;
-        
+
         if (!enabled && isApplying)
         {
             isApplying = false;
             holdDuration = 0f;
             currentStrength = 0f;
         }
-        
+
+        // Hide both ring renderers when disabled
         if (ringLine != null)
         {
             ringLine.enabled = enabled;
+        }
+
+        if (energyRingLine != null)
+        {
+            energyRingLine.enabled = enabled;
         }
     }
     

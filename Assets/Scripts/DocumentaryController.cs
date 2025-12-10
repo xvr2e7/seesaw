@@ -22,6 +22,10 @@ public class DocumentaryController : MonoBehaviour
     
     [Header("Video")]
     public string videoFileName = "documentary.mp4";
+
+    [Tooltip("Volume of the documentary video (0-1)")]
+    [Range(0f, 1f)]
+    public float videoVolume = 1f;
     
     [Header("Layout")]
     [Tooltip("Spacing between panels and from screen edges")]
@@ -197,6 +201,7 @@ public class DocumentaryController : MonoBehaviour
         // Audio
         videoPlayer.audioOutputMode = VideoAudioOutputMode.AudioSource;
         AudioSource audioSource = obj.AddComponent<AudioSource>();
+        audioSource.volume = videoVolume;
         videoPlayer.SetTargetAudioSource(0, audioSource);
         
         // Render texture

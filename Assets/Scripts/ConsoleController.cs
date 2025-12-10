@@ -245,8 +245,15 @@ public class ConsoleController : MonoBehaviour
     
     void Update()
     {
+        // Check for Escape key to quit the game
+        if (Input.GetKeyDown(KeyCode.Escape))
+        {
+            QuitGame();
+            return;
+        }
+
         if (isTransitioning || isBooting) return;
-        
+
         // Ensure preview texture is assigned
         if (feedPanels[activeFeedIndex] != null && feedPanels[activeFeedIndex].texture == null)
         {
@@ -259,12 +266,21 @@ public class ConsoleController : MonoBehaviour
                 feedPanels[activeFeedIndex].texture = previewTexture;
             }
         }
-        
+
         UpdateLayout();
         UpdateStaticNoise();
         UpdateHoverDetection();
         UpdateFeedBrightness();
         UpdateClickDetection();
+    }
+
+    void QuitGame()
+    {
+        #if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+        #else
+            Application.Quit();
+        #endif
     }
     
     void UpdateLayout()

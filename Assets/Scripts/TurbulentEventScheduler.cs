@@ -260,14 +260,13 @@ public class TurbulentEventScheduler : MonoBehaviour
     {
         // Weighted random selection - favor visually distinct patterns
         float roll = Random.value;
-        
-        if (roll < 0.25f) return TurbulenceEvent.PatternType.Circular;      // 25% - peaceful assembly
-        if (roll < 0.40f) return TurbulenceEvent.PatternType.Vortex;        // 15% - spiral gathering
-        if (roll < 0.55f) return TurbulenceEvent.PatternType.Scatter;       // 15% - panic
-        if (roll < 0.70f) return TurbulenceEvent.PatternType.Convergence;   // 15% - gathering
-        if (roll < 0.80f) return TurbulenceEvent.PatternType.Cluster;       // 10% - sit-in/blockade
-        if (roll < 0.90f) return TurbulenceEvent.PatternType.Wave;          // 10% - march
-        return TurbulenceEvent.PatternType.Divergence;                       // 10% - dispersal
+
+        if (roll < 0.30f) return TurbulenceEvent.PatternType.Circular;      // 30% - peaceful assembly
+        if (roll < 0.50f) return TurbulenceEvent.PatternType.Vortex;        // 20% - spiral gathering
+        if (roll < 0.70f) return TurbulenceEvent.PatternType.Scatter;       // 20% - panic
+        if (roll < 0.85f) return TurbulenceEvent.PatternType.Cluster;       // 15% - sit-in/blockade
+        if (roll < 0.92f) return TurbulenceEvent.PatternType.Wave;          // 7% - march
+        return TurbulenceEvent.PatternType.Oscillation;                      // 8% - oscillation
     }
     
     void ApplyTurbulenceToSimulation(float dt)
@@ -357,23 +356,8 @@ public class TurbulentEventScheduler : MonoBehaviour
             strength = 2f,
             frequency = 0.8f
         });
-        
-        // Event 2: Convergence at 30 seconds (crowd gathering)
-        scriptedEvents.Add(new TurbulenceEvent
-        {
-            eventName = "Gathering_Point",
-            pattern = TurbulenceEvent.PatternType.Convergence,
-            position = new Vector2(-halfSize.x * 0.4f, halfSize.y * 0.3f),
-            radius = 12f,
-            startTime = 30f,
-            duration = 12f,
-            fadeInTime = 1.5f,
-            fadeOutTime = 2f,
-            strength = 2.5f,
-            frequency = 1f
-        });
-        
-        // Event 3: Vortex at 50 seconds (spiral formation)
+
+        // Event 2: Vortex at 50 seconds (spiral formation)
         scriptedEvents.Add(new TurbulenceEvent
         {
             eventName = "Spiral_Formation",
@@ -387,8 +371,8 @@ public class TurbulentEventScheduler : MonoBehaviour
             strength = 2.5f,
             frequency = 1.2f
         });
-        
-        // Event 4: Scatter at 75 seconds (panic event)
+
+        // Event 3: Scatter at 75 seconds (panic event)
         scriptedEvents.Add(new TurbulenceEvent
         {
             eventName = "Panic_Scatter",
@@ -402,8 +386,8 @@ public class TurbulentEventScheduler : MonoBehaviour
             strength = 3.5f,
             frequency = 2f
         });
-        
-        // Event 5: Cluster at 95 seconds (sit-in/blockade)
+
+        // Event 4: Cluster at 95 seconds (sit-in/blockade)
         scriptedEvents.Add(new TurbulenceEvent
         {
             eventName = "Blockade",
@@ -417,8 +401,8 @@ public class TurbulentEventScheduler : MonoBehaviour
             strength = 2f,
             frequency = 0.5f
         });
-        
-        // Event 6: Wave at 120 seconds (march)
+
+        // Event 5: Wave at 120 seconds (march)
         scriptedEvents.Add(new TurbulenceEvent
         {
             eventName = "March_Wave",
@@ -433,22 +417,23 @@ public class TurbulentEventScheduler : MonoBehaviour
             frequency = 0.7f,
             direction = new Vector2(1f, 0.3f).normalized
         });
-        
-        // Event 7: Multiple convergences at 145 seconds (simultaneous gatherings)
+
+        // Event 6: Oscillation at 145 seconds (coordinated movement)
         scriptedEvents.Add(new TurbulenceEvent
         {
-            eventName = "Multi_Gather_A",
-            pattern = TurbulenceEvent.PatternType.Convergence,
+            eventName = "Oscillation_Pattern",
+            pattern = TurbulenceEvent.PatternType.Oscillation,
             position = new Vector2(-halfSize.x * 0.35f, -halfSize.y * 0.3f),
-            radius = 8f,
+            radius = 10f,
             startTime = 145f,
-            duration = 12f,
+            duration = 14f,
             fadeInTime = 1.5f,
             fadeOutTime = 2f,
             strength = 2.5f,
-            frequency = 1f
+            frequency = 1.2f,
+            direction = new Vector2(0.7f, 0.7f).normalized
         });
-        
+
         scriptedEvents.Add(new TurbulenceEvent
         {
             eventName = "Multi_Gather_B",
@@ -463,8 +448,8 @@ public class TurbulentEventScheduler : MonoBehaviour
             strength = 2.2f,
             frequency = 0.9f
         });
-        
-        // Event 8: Large vortex at 175 seconds (major gathering)
+
+        // Event 7: Large vortex at 175 seconds (major gathering)
         scriptedEvents.Add(new TurbulenceEvent
         {
             eventName = "Major_Vortex",
@@ -478,8 +463,8 @@ public class TurbulentEventScheduler : MonoBehaviour
             strength = 3f,
             frequency = 1.0f
         });
-        
-        // Event 9: Final scatter at 200 seconds (climactic panic)
+
+        // Event 8: Final scatter at 200 seconds (climactic panic)
         scriptedEvents.Add(new TurbulenceEvent
         {
             eventName = "Final_Scatter",
@@ -493,8 +478,8 @@ public class TurbulentEventScheduler : MonoBehaviour
             strength = 4f,
             frequency = 2.5f
         });
-        
-        // Event 10: Final calm cluster at 220 seconds (aftermath)
+
+        // Event 9: Final calm cluster at 220 seconds (aftermath)
         scriptedEvents.Add(new TurbulenceEvent
         {
             eventName = "Aftermath_Cluster",
@@ -685,8 +670,6 @@ public class TurbulentEventScheduler : MonoBehaviour
             case TurbulenceEvent.PatternType.Circular:    return new Color(0.2f, 0.8f, 0.2f);  // Green - peaceful
             case TurbulenceEvent.PatternType.Scatter:     return new Color(1f, 0.3f, 0.2f);    // Red - panic
             case TurbulenceEvent.PatternType.Vortex:      return new Color(0.8f, 0.4f, 0.8f);  // Purple - spiral
-            case TurbulenceEvent.PatternType.Convergence: return new Color(0.2f, 0.6f, 1f);   // Blue - gathering
-            case TurbulenceEvent.PatternType.Divergence:  return new Color(1f, 0.6f, 0.2f);   // Orange - dispersal
             case TurbulenceEvent.PatternType.Wave:        return new Color(0.2f, 1f, 0.8f);   // Cyan - march
             case TurbulenceEvent.PatternType.Oscillation: return new Color(1f, 1f, 0.2f);    // Yellow
             case TurbulenceEvent.PatternType.Cluster:     return new Color(0.6f, 0.6f, 0.6f); // Gray - blockade

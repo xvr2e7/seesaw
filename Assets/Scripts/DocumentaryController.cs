@@ -18,6 +18,7 @@ public class DocumentaryController : MonoBehaviour
     public InputRecorder inputRecorder;
     public FlowSimulation flowSimulation;
     public FlowVisualizer flowVisualizer;
+    public AgentRenderer agentRenderer; // Added reference to renderer
     public Camera mainCamera;
     
     [Header("Video")]
@@ -67,6 +68,7 @@ public class DocumentaryController : MonoBehaviour
     
     // Video
     private VideoPlayer videoPlayer;
+    private AudioSource videoAudioSource;
     private RenderTexture videoRT;
     private bool videoEnded = false;
     
@@ -122,6 +124,7 @@ public class DocumentaryController : MonoBehaviour
         if (inputRecorder == null) inputRecorder = FindObjectOfType<InputRecorder>();
         if (flowSimulation == null) flowSimulation = FindObjectOfType<FlowSimulation>();
         if (flowVisualizer == null) flowVisualizer = FindObjectOfType<FlowVisualizer>();
+        if (agentRenderer == null) agentRenderer = FindObjectOfType<AgentRenderer>();
         if (mainCamera == null) mainCamera = Camera.main;
     }
     
@@ -200,9 +203,10 @@ public class DocumentaryController : MonoBehaviour
         
         // Audio
         videoPlayer.audioOutputMode = VideoAudioOutputMode.AudioSource;
-        AudioSource audioSource = obj.AddComponent<AudioSource>();
-        audioSource.volume = videoVolume;
-        videoPlayer.SetTargetAudioSource(0, audioSource);
+
+        videoAudioSource = obj.AddComponent<AudioSource>();
+        videoAudioSource.volume = videoVolume;
+        videoPlayer.SetTargetAudioSource(0, videoAudioSource);
         
         // Render texture
         videoRT = new RenderTexture(1920, 1080, 0);
@@ -287,8 +291,12 @@ public class DocumentaryController : MonoBehaviour
         // Wait a moment
         yield return new WaitForSeconds(0.2f);
         
-        // Pause all game systems
-        PauseGame();
+        // Disable gameplay systems (physics, input), but KEEP VISUALS ENABLED
+        DisableGameplaySystems();
+        
+        // Ensure visualizers are enabled for replay
+        if (flowVisualizer != null) flowVisualizer.enabled = true;
+        if (agentRenderer != null) agentRenderer.enabled = true;
         
         // Setup replay camera (copy main camera settings)
         if (mainCamera != null)
@@ -325,18 +333,16 @@ public class DocumentaryController : MonoBehaviour
         fadeOverlay.color = new Color(0, 0, 0, 0);
     }
     
-    void PauseGame()
+    void DisableGameplaySystems()
     {
-        // Disable simulation
+        // Disable simulation physics only
         if (flowSimulation != null) flowSimulation.enabled = false;
-        if (flowVisualizer != null) flowVisualizer.enabled = false;
+        
+        // Do NOT disable visualizers here (handled in TransitionIn)
         
         // Disable other systems
         var scheduler = FindObjectOfType<TurbulentEventScheduler>();
         if (scheduler != null) scheduler.enabled = false;
-        
-        var agentRenderer = FindObjectOfType<AgentRenderer>();
-        if (agentRenderer != null) agentRenderer.enabled = false;
         
         var playerTool = FindObjectOfType<PlayerToolController>();
         if (playerTool != null) playerTool.SetToolEnabled(false);
@@ -353,7 +359,7 @@ public class DocumentaryController : MonoBehaviour
         var soundscape = FindObjectOfType<AmbientSoundscapeController>();
         if (soundscape != null) soundscape.FadeToSilence(1f);
         
-        Debug.Log("[Documentary] Game paused");
+        Debug.Log("[Documentary] Gameplay systems disabled for replay");
     }
     
     void OnVideoEnded(VideoPlayer vp)
@@ -457,6 +463,11 @@ public class DocumentaryController : MonoBehaviour
             ReturnToConsole();
         }
         
+        if (videoAudioSource != null && videoAudioSource.volume != videoVolume)
+        {
+            videoAudioSource.volume = videoVolume;
+        }
+
         if (!isActive) return;
         
         UpdateLayout();
@@ -513,12 +524,36 @@ public class DocumentaryController : MonoBehaviour
         if (inputRecorder == null || inputRecorder.RecordedFrames.Count == 0) return;
         
         float elapsed = Time.time - startTime;
-        float normalizedTime = elapsed / replayDuration;
         
         // Get replay frame
         InputFrame frame = inputRecorder.GetInterpolatedFrameAtTime(elapsed);
         
-        // Update cursor position
+        // --- 1. REPLAY BACKGROUND (Agents) ---
+        // Inject recorded positions into the simulation data
+        // The simulation physics is disabled, but visualizers read from this array
+        if (flowSimulation != null && frame.agentPositions != null)
+        {
+            Vector2[] simPositions = flowSimulation.Positions;
+            if (simPositions != null && simPositions.Length == frame.agentPositions.Length)
+            {
+                System.Array.Copy(frame.agentPositions, simPositions, simPositions.Length);
+            }
+        }
+        
+        // --- 2. REPLAY CAMERA ---
+        if (replayCamera != null)
+        {
+            // Apply position
+            replayCamera.transform.position = new Vector3(frame.cameraPosition.x, frame.cameraPosition.y, -10f);
+            
+            // Apply zoom (Ortho size is half of visible height)
+            if (frame.cameraViewport.height > 0)
+            {
+                replayCamera.orthographicSize = frame.cameraViewport.height / 2f;
+            }
+        }
+
+        // --- 3. REPLAY CURSOR ---
         UpdateCursor(frame);
         
         // Render replay frame

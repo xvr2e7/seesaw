@@ -8,10 +8,8 @@ using System.Collections.Generic;
 /// - Cursor world position
 /// - Camera position and viewport
 /// - Tool state (active, radius, strength)
+/// - Agent positions (for background playback)
 /// - Timestamps synchronized to session time
-/// 
-/// Recording starts when gameplay begins and stops when session ends.
-/// Data is kept in memory for same-session replay.
 /// </summary>
 public class InputRecorder : MonoBehaviour
 {
@@ -154,11 +152,17 @@ public class InputRecorder : MonoBehaviour
             frame.cameraViewport = cameraController.GetVisibleBounds();
         }
         
-        // Flow state (for replay synchronization)
+        // Flow state (Capture full agent positions for replay)
         if (flowSimulation != null)
         {
             frame.currentDivergence = flowSimulation.CurrentDivergence;
             frame.meanVelocity = flowSimulation.MeanVelocity;
+            
+            // Clone the array to store a snapshot of positions
+            if (flowSimulation.Positions != null)
+            {
+                frame.agentPositions = (Vector2[])flowSimulation.Positions.Clone();
+            }
         }
         
         recordedFrames.Add(frame);
@@ -356,16 +360,17 @@ public struct InputFrame
     public Vector2 cameraPosition;
     public Rect cameraViewport;
     
-    // Flow state (for context)
+    // Flow state (for context and replay)
     public float currentDivergence;
     public Vector2 meanVelocity;
+    public Vector2[] agentPositions; // Snapshot of agent positions
     
     /// <summary>
     /// Interpolate between two frames
     /// </summary>
     public static InputFrame Lerp(InputFrame a, InputFrame b, float t)
     {
-        return new InputFrame
+        InputFrame result = new InputFrame
         {
             timestamp = Mathf.Lerp(a.timestamp, b.timestamp, t),
             frameNumber = t < 0.5f ? a.frameNumber : b.frameNumber,
@@ -387,6 +392,23 @@ public struct InputFrame
             currentDivergence = Mathf.Lerp(a.currentDivergence, b.currentDivergence, t),
             meanVelocity = Vector2.Lerp(a.meanVelocity, b.meanVelocity, t)
         };
+
+        // Interpolate agent positions for smooth playback
+        if (a.agentPositions != null && b.agentPositions != null && a.agentPositions.Length == b.agentPositions.Length)
+        {
+            result.agentPositions = new Vector2[a.agentPositions.Length];
+            for (int i = 0; i < a.agentPositions.Length; i++)
+            {
+                result.agentPositions[i] = Vector2.Lerp(a.agentPositions[i], b.agentPositions[i], t);
+            }
+        }
+        else if (a.agentPositions != null)
+        {
+             // Fallback if array sizes mismatch or one is missing
+             result.agentPositions = a.agentPositions;
+        }
+
+        return result;
     }
 }
 

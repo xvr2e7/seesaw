@@ -703,8 +703,10 @@ MonoBehaviour:
   inputRecorder: {fileID: 755271954}
   flowSimulation: {fileID: 1382237305}
   flowVisualizer: {fileID: 1382237306}
+  agentRenderer: {fileID: 0}
   mainCamera: {fileID: 2057931241}
   videoFileName: demo.mp4
+  videoVolume: 0.6
   spacing: 24
   panelAspectRatio: 1.778
   fadeDuration: 2
@@ -832,7 +834,7 @@ MonoBehaviour:
   stingerVolume: 0.8
   stingerFadeIn: 0.3
   stingerFadeOut: 2
-  masterVolume: 0.8
+  masterVolume: 1
   enableSpatialHints: 1
   spatialAmount: 0.15
   showDebugInfo: 0

@@ -4,14 +4,6 @@ using System.Collections.Generic;
 /// <summary>
 /// Schedules and manages turbulence events in the simulation.
 /// Handles both pre-scripted events and dynamic event spawning.
-/// 
-/// Clinical terminology masks the true nature:
-/// - "Anomaly" = peaceful gathering
-/// - "Entropy spike" = panic/flight  
-/// - "Vector divergence" = dispersal
-/// - "Flow obstruction" = protest blocking movement
-/// 
-/// Events are timed to fit within a ~4 minute active window (after initial delay).
 /// </summary>
 public class TurbulentEventScheduler : MonoBehaviour
 {
@@ -155,6 +147,18 @@ public class TurbulentEventScheduler : MonoBehaviour
             UpdateRandomEvents();
         }
         
+        // Report active turbulence to FlowSimulation for scoring
+        if (flowSimulation != null)
+        {
+            float totalActiveStrength = 0f;
+            foreach(var evt in activeEvents)
+            {
+                if (evt.isActive)
+                    totalActiveStrength += evt.strength * evt.currentIntensity;
+            }
+            flowSimulation.ReportTurbulence(totalActiveStrength);
+        }
+
         // Apply all active events to simulation
         ApplyTurbulenceToSimulation(dt);
         
@@ -334,7 +338,6 @@ public class TurbulentEventScheduler : MonoBehaviour
     
     /// <summary>
     /// Creates a default event sequence optimized for ~4 minute gameplay
-    /// Events are spaced to give player response time between them
     /// </summary>
     void CreateDefaultEventSequence()
     {
@@ -381,7 +384,7 @@ public class TurbulentEventScheduler : MonoBehaviour
             radius = 12f,
             startTime = 75f,
             duration = 10f,
-            fadeInTime = 0.5f, // Fast onset - sudden panic
+            fadeInTime = 0.5f, 
             fadeOutTime = 2.5f,
             strength = 3.5f,
             frequency = 2f

@@ -22,7 +22,7 @@ public class FlowSimulation : MonoBehaviour
     public float dampeningRecoveryRate = 0.5f; 
     
     [Header("Flow Metrics")]
-    [Tooltip("Current average divergence from mean flow (turbulence indicator)")]
+    [Tooltip("Current divergence score (controlled by events/dampening)")]
     [SerializeField] private float currentDivergence = 0f;
     
     [Tooltip("Smoothing for divergence calculation")]
@@ -43,6 +43,10 @@ public class FlowSimulation : MonoBehaviour
     // Flow metrics
     private Vector2 meanVelocity;
     private float velocityVariance;
+
+    // Score Tracking
+    private float _frameTurbulence = 0f;
+    private float _frameDampening = 0f;
     
     // Public Accessors
     public Vector2[] Positions => positions;
@@ -222,35 +226,38 @@ public class FlowSimulation : MonoBehaviour
     {
         if (velocities == null || agentCount == 0) return;
         
-        // Calculate mean velocity
-        Vector2 sum = Vector2.zero;
-        for (int i = 0; i < agentCount; i++)
-        {
-            sum += velocities[i];
-        }
-        Vector2 newMean = sum / agentCount;
+        // --- SCORING LOGIC ---
+        // Divergence is now purely based on:
+        // + Turbulence Event Strength
+        // - Player Dampening
         
-        // Calculate variance (divergence from mean)
-        float varianceSum = 0f;
-        for (int i = 0; i < agentCount; i++)
-        {
-            Vector2 diff = velocities[i] - newMean;
-            varianceSum += diff.sqrMagnitude;
-        }
-        float newVariance = varianceSum / agentCount;
+        // Calculate raw score (Turbulence - Dampening)
+        // Scaled to match the previous 0.0 - 2.0+ range
+        float rawScore = (_frameTurbulence * 0.1f) - (_frameDampening * 2.0f);
+        float targetDivergence = Mathf.Max(0f, rawScore);
         
-        // Smooth the metrics
+        // Smooth changes
         float smoothFactor = 1f - Mathf.Exp(-divergenceSmoothing * dt);
-        meanVelocity = Vector2.Lerp(meanVelocity, newMean, smoothFactor);
-        velocityVariance = Mathf.Lerp(velocityVariance, newVariance, smoothFactor);
+        currentDivergence = Mathf.Lerp(currentDivergence, targetDivergence, smoothFactor);
         
-        // Revised Metric: Normalize based on speed
-        // 0.0 = Perfectly uniform motion
-        // > 1.0 = Chaotic
-        currentDivergence = Mathf.Sqrt(velocityVariance) / moveSpeed;
-        
-        // Visual clamp
-        currentDivergence = Mathf.Clamp(currentDivergence, 0f, 2f);
+        // Reset frame accumulators
+        _frameTurbulence = 0f;
+        _frameDampening = 0f;
+
+        // Keep mean velocity calc for other visuals
+        Vector2 sum = Vector2.zero;
+        for (int i = 0; i < agentCount; i++) sum += velocities[i];
+        meanVelocity = sum / agentCount;
+    }
+    
+    public void ReportTurbulence(float strength)
+    {
+        _frameTurbulence += strength;
+    }
+
+    public void ReportDampening(float strength)
+    {
+        _frameDampening += strength;
     }
     
     void OnDrawGizmos()
@@ -298,6 +305,9 @@ public class FlowSimulation : MonoBehaviour
     /// </summary>
     public void DampenInRadius(Vector2 center, float radius, float dampening)
     {
+        // Report dampening for score calculation
+        ReportDampening(dampening);
+
         float radiusSqr = radius * radius;
         for (int i = 0; i < agentCount; i++)
         {
@@ -321,7 +331,7 @@ public class FlowSimulation : MonoBehaviour
     public void InjectCircularTurbulence(Vector2 center, float radius, float strength, float dt)
     {
         float radiusSqr = radius * radius;
-        float adjustedStrength = strength * 5f; // Buffed for dramatic effect
+        float adjustedStrength = strength * 5f; 
         
         for (int i = 0; i < agentCount; i++)
         {
@@ -334,7 +344,6 @@ public class FlowSimulation : MonoBehaviour
                 float falloff = 1f - (dist / radius);
                 falloff *= falloff;
                 
-                // Tangent direction (perpendicular to center)
                 Vector2 tangent = new Vector2(-toCenter.y, toCenter.x).normalized;
                 velocities[i] += tangent * adjustedStrength * falloff * dt;
             }
@@ -347,7 +356,7 @@ public class FlowSimulation : MonoBehaviour
     public void InjectScatterTurbulence(Vector2 center, float radius, float strength, float dt)
     {
         float radiusSqr = radius * radius;
-        float adjustedStrength = strength * 8f; // Buffed for dramatic effect
+        float adjustedStrength = strength * 8f; 
 
         for (int i = 0; i < agentCount; i++)
         {
@@ -360,7 +369,6 @@ public class FlowSimulation : MonoBehaviour
                 float falloff = 1f - (dist / radius);
                 falloff *= falloff;
                 
-                // Outward direction with some randomness
                 Vector2 outward = fromCenter.normalized;
                 float noiseAngle = (Mathf.PerlinNoise(positions[i].x * 0.1f, positions[i].y * 0.1f) - 0.5f) * Mathf.PI;
                 Vector2 noisy = new Vector2(
@@ -379,7 +387,7 @@ public class FlowSimulation : MonoBehaviour
     public void InjectVortexTurbulence(Vector2 center, float radius, float strength, float inwardPull, float dt)
     {
         float radiusSqr = radius * radius;
-        float adjustedStrength = strength * 6f; // Buffed
+        float adjustedStrength = strength * 6f; 
 
         for (int i = 0; i < agentCount; i++)
         {
@@ -395,7 +403,6 @@ public class FlowSimulation : MonoBehaviour
                 Vector2 dirToCenter = toCenter / dist;
                 Vector2 tangent = new Vector2(-dirToCenter.y, dirToCenter.x);
                 
-                // Spiral: mostly tangent with some inward pull
                 Vector2 spiral = tangent + dirToCenter * inwardPull;
                 velocities[i] += spiral.normalized * adjustedStrength * falloff * dt;
             }

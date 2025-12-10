@@ -7,9 +7,6 @@ using System.Collections;
 /// <summary>
 /// Documentary phase controller for Laminar Flow.
 /// Shows split-screen: left = gameplay replay, right = documentary video.
-/// Both panels maintain 16:9 aspect ratio.
-/// 
-/// After documentary ends, automatically fades back to Console scene.
 /// </summary>
 public class DocumentaryController : MonoBehaviour
 {
@@ -18,7 +15,7 @@ public class DocumentaryController : MonoBehaviour
     public InputRecorder inputRecorder;
     public FlowSimulation flowSimulation;
     public FlowVisualizer flowVisualizer;
-    public AgentRenderer agentRenderer; // Added reference to renderer
+    public AgentRenderer agentRenderer; 
     public Camera mainCamera;
     
     [Header("Video")]
@@ -65,6 +62,7 @@ public class DocumentaryController : MonoBehaviour
     private RawImage leftPanel;
     private RawImage rightPanel;
     private Image fadeOverlay;
+    private GUIStyle docScoreStyle; // Style for convergence score
     
     // Video
     private VideoPlayer videoPlayer;
@@ -195,25 +193,21 @@ public class DocumentaryController : MonoBehaviour
         
         videoPlayer = obj.AddComponent<VideoPlayer>();
         videoPlayer.playOnAwake = false;
-        videoPlayer.isLooping = false; // Don't loop - we want to detect end
+        videoPlayer.isLooping = false; 
         videoPlayer.renderMode = VideoRenderMode.RenderTexture;
         
-        // Subscribe to video end
         videoPlayer.loopPointReached += OnVideoEnded;
         
-        // Audio
         videoPlayer.audioOutputMode = VideoAudioOutputMode.AudioSource;
 
         videoAudioSource = obj.AddComponent<AudioSource>();
         videoAudioSource.volume = videoVolume;
         videoPlayer.SetTargetAudioSource(0, videoAudioSource);
         
-        // Render texture
         videoRT = new RenderTexture(1920, 1080, 0);
         videoRT.name = "VideoRT";
         videoPlayer.targetTexture = videoRT;
         
-        // Set URL
         string path = System.IO.Path.Combine(Application.streamingAssetsPath, videoFileName);
         videoPlayer.url = path;
         videoPlayer.Prepare();
@@ -221,11 +215,9 @@ public class DocumentaryController : MonoBehaviour
     
     void CreateReplayCamera()
     {
-        // Create render texture for replay
         replayRT = new RenderTexture(1920, 1080, 24);
         replayRT.name = "ReplayRT";
         
-        // Create camera
         GameObject camObj = new GameObject("ReplayCamera");
         camObj.transform.SetParent(transform);
         replayCamera = camObj.AddComponent<Camera>();
@@ -249,7 +241,6 @@ public class DocumentaryController : MonoBehaviour
         cursorRing.startColor = cursorColor;
         cursorRing.endColor = cursorColor;
         
-        // Create circle
         int segments = 32;
         cursorRing.positionCount = segments;
         
@@ -266,17 +257,14 @@ public class DocumentaryController : MonoBehaviour
         
         Debug.Log("[Documentary] Starting documentary phase");
         
-        // Get replay duration from recorder
         if (inputRecorder != null && inputRecorder.RecordedFrames.Count > 0)
         {
             replayDuration = inputRecorder.GetRecordingDuration();
         }
         else
         {
-            replayDuration = 60f; // Default fallback
+            replayDuration = 60f;
         }
-        
-        Debug.Log($"[Documentary] Replay duration: {replayDuration:F1}s");
         
         videoEnded = false;
         StartCoroutine(TransitionIn());
@@ -284,21 +272,16 @@ public class DocumentaryController : MonoBehaviour
     
     IEnumerator TransitionIn()
     {
-        // Show canvas with black overlay
         canvas.gameObject.SetActive(true);
         fadeOverlay.color = Color.black;
         
-        // Wait a moment
         yield return new WaitForSeconds(0.2f);
         
-        // Disable gameplay systems (physics, input), but KEEP VISUALS ENABLED
         DisableGameplaySystems();
         
-        // Ensure visualizers are enabled for replay
         if (flowVisualizer != null) flowVisualizer.enabled = true;
         if (agentRenderer != null) agentRenderer.enabled = true;
         
-        // Setup replay camera (copy main camera settings)
         if (mainCamera != null)
         {
             replayCamera.CopyFrom(mainCamera);
@@ -307,11 +290,9 @@ public class DocumentaryController : MonoBehaviour
             replayCamera.backgroundColor = Color.black;
         }
         
-        // Assign textures to panels
         leftPanel.texture = replayRT;
         rightPanel.texture = videoRT;
         
-        // Start playback
         isActive = true;
         startTime = Time.time;
         cursorObject.SetActive(true);
@@ -321,7 +302,6 @@ public class DocumentaryController : MonoBehaviour
             videoPlayer.Play();
         }
         
-        // Fade in
         float elapsed = 0f;
         while (elapsed < fadeDuration)
         {
@@ -335,12 +315,8 @@ public class DocumentaryController : MonoBehaviour
     
     void DisableGameplaySystems()
     {
-        // Disable simulation physics only
         if (flowSimulation != null) flowSimulation.enabled = false;
         
-        // Do NOT disable visualizers here (handled in TransitionIn)
-        
-        // Disable other systems
         var scheduler = FindObjectOfType<TurbulentEventScheduler>();
         if (scheduler != null) scheduler.enabled = false;
         
@@ -358,15 +334,11 @@ public class DocumentaryController : MonoBehaviour
         
         var soundscape = FindObjectOfType<AmbientSoundscapeController>();
         if (soundscape != null) soundscape.FadeToSilence(1f);
-        
-        Debug.Log("[Documentary] Gameplay systems disabled for replay");
     }
     
     void OnVideoEnded(VideoPlayer vp)
     {
         videoEnded = true;
-        Debug.Log("[Documentary] Video playback ended");
-        
         if (returnToConsole)
         {
             StartCoroutine(ReturnToConsoleAfterDelay());
@@ -375,26 +347,19 @@ public class DocumentaryController : MonoBehaviour
     
     IEnumerator ReturnToConsoleAfterDelay()
     {
-        // Wait for the specified delay
         yield return new WaitForSeconds(endDelay);
-        
-        // Auto-return to console
         ReturnToConsole();
     }
     
     public void ReturnToConsole()
     {
         if (isReturningToConsole) return;
-        
         isReturningToConsole = true;
         StartCoroutine(TransitionToConsole());
     }
     
     IEnumerator TransitionToConsole()
     {
-        Debug.Log("[Documentary] Returning to console...");
-        
-        // Fade out to black
         float elapsed = 0f;
         while (elapsed < returnFadeDuration)
         {
@@ -405,29 +370,15 @@ public class DocumentaryController : MonoBehaviour
         }
         fadeOverlay.color = Color.black;
         
-        // Wait a frame to ensure black is rendered
         yield return null;
         
-        // Stop video
-        if (videoPlayer != null)
-        {
-            videoPlayer.Stop();
-        }
+        if (videoPlayer != null) videoPlayer.Stop();
         
-        // Notify ConsoleController that we're returning
         ConsoleController.SetReturningFromDocumentary();
         
-        // Load console scene
         AsyncOperation loadOp = SceneManager.LoadSceneAsync(consoleSceneName, LoadSceneMode.Single);
         loadOp.allowSceneActivation = false;
-        
-        // Wait until scene is ready
-        while (loadOp.progress < 0.9f)
-        {
-            yield return null;
-        }
-        
-        // Activate the scene
+        while (loadOp.progress < 0.9f) yield return null;
         loadOp.allowSceneActivation = true;
     }
     
@@ -437,36 +388,17 @@ public class DocumentaryController : MonoBehaviour
     
     void Update()
     {
-        // Debug skip key
         if (!isActive && Input.GetKeyDown(skipKey))
         {
-            Debug.Log("[Documentary] Skip key pressed");
-            
-            // Force end game if playing
-            if (gameManager != null && gameManager.IsPlaying)
-            {
-                gameManager.ForceEndSession();
-            }
-            
-            // Stop recording
-            if (inputRecorder != null && inputRecorder.IsRecording)
-            {
-                inputRecorder.StopRecording();
-            }
-            
+            if (gameManager != null && gameManager.IsPlaying) gameManager.ForceEndSession();
+            if (inputRecorder != null && inputRecorder.IsRecording) inputRecorder.StopRecording();
             StartDocumentary();
         }
         
-        // Return key during documentary
-        if (isActive && Input.GetKeyDown(returnKey))
-        {
-            ReturnToConsole();
-        }
+        if (isActive && Input.GetKeyDown(returnKey)) ReturnToConsole();
         
         if (videoAudioSource != null && videoAudioSource.volume != videoVolume)
-        {
             videoAudioSource.volume = videoVolume;
-        }
 
         if (!isActive) return;
         
@@ -479,30 +411,22 @@ public class DocumentaryController : MonoBehaviour
         float sw = Screen.width;
         float sh = Screen.height;
         
-        // Calculate panel size to fit two 16:9 panels side by side with spacing
-        // Total width needed: spacing + panel + spacing + panel + spacing = 3*spacing + 2*panel
-        // Total height needed: spacing + panel + spacing = 2*spacing + panel
-        
         float availableWidth = sw - (spacing * 3f);
         float availableHeight = sh - (spacing * 2f);
         
-        // Each panel gets half the available width
         float panelWidth = availableWidth / 2f;
         float panelHeight = panelWidth / panelAspectRatio;
         
-        // If too tall, scale down to fit height
         if (panelHeight > availableHeight)
         {
             panelHeight = availableHeight;
             panelWidth = panelHeight * panelAspectRatio;
         }
         
-        // Center vertically
         float totalWidth = (panelWidth * 2f) + spacing;
         float startX = (sw - totalWidth) / 2f;
         float startY = (sh - panelHeight) / 2f;
         
-        // Left panel
         RectTransform leftRect = leftPanel.GetComponent<RectTransform>();
         leftRect.anchorMin = Vector2.zero;
         leftRect.anchorMax = Vector2.zero;
@@ -510,7 +434,6 @@ public class DocumentaryController : MonoBehaviour
         leftRect.anchoredPosition = new Vector2(startX, startY);
         leftRect.sizeDelta = new Vector2(panelWidth, panelHeight);
         
-        // Right panel
         RectTransform rightRect = rightPanel.GetComponent<RectTransform>();
         rightRect.anchorMin = Vector2.zero;
         rightRect.anchorMax = Vector2.zero;
@@ -524,13 +447,8 @@ public class DocumentaryController : MonoBehaviour
         if (inputRecorder == null || inputRecorder.RecordedFrames.Count == 0) return;
         
         float elapsed = Time.time - startTime;
-        
-        // Get replay frame
         InputFrame frame = inputRecorder.GetInterpolatedFrameAtTime(elapsed);
         
-        // --- 1. REPLAY BACKGROUND (Agents) ---
-        // Inject recorded positions into the simulation data
-        // The simulation physics is disabled, but visualizers read from this array
         if (flowSimulation != null && frame.agentPositions != null)
         {
             Vector2[] simPositions = flowSimulation.Positions;
@@ -540,23 +458,17 @@ public class DocumentaryController : MonoBehaviour
             }
         }
         
-        // --- 2. REPLAY CAMERA ---
         if (replayCamera != null)
         {
-            // Apply position
             replayCamera.transform.position = new Vector3(frame.cameraPosition.x, frame.cameraPosition.y, -10f);
-            
-            // Apply zoom (Ortho size is half of visible height)
             if (frame.cameraViewport.height > 0)
             {
                 replayCamera.orthographicSize = frame.cameraViewport.height / 2f;
             }
         }
 
-        // --- 3. REPLAY CURSOR ---
         UpdateCursor(frame);
         
-        // Render replay frame
         replayCamera.enabled = true;
         replayCamera.Render();
         replayCamera.enabled = false;
@@ -566,12 +478,10 @@ public class DocumentaryController : MonoBehaviour
     {
         if (cursorRing == null) return;
         
-        // Set cursor color based on tool state
         Color c = frame.toolActive ? cursorColor : new Color(cursorColor.r, cursorColor.g, cursorColor.b, 0.3f);
         cursorRing.startColor = c;
         cursorRing.endColor = c;
         
-        // Update circle positions
         float radius = frame.toolRadius;
         int segments = cursorRing.positionCount;
         
@@ -591,7 +501,12 @@ public class DocumentaryController : MonoBehaviour
     
     void OnGUI()
     {
-        if (!showDebugInfo || !isActive) return;
+        if (!isActive) return;
+        
+        // Draw Convergence Score
+        DrawConvergenceScore();
+
+        if (!showDebugInfo) return;
         
         GUILayout.BeginArea(new Rect(10, 10, 250, 150));
         GUI.color = new Color(0, 0, 0, 0.8f);
@@ -599,11 +514,45 @@ public class DocumentaryController : MonoBehaviour
         GUI.color = Color.white;
         
         GUILayout.Label("=== DOCUMENTARY ===");
-        GUILayout.Label($"Active: {isActive}");
-        GUILayout.Label($"Video Ended: {videoEnded}");
         GUILayout.Label($"Elapsed: {(Time.time - startTime):F1}s");
         GUILayout.Label($"Replay Duration: {replayDuration:F1}s");
-        GUILayout.Label($"Press {returnKey} to return");
         GUILayout.EndArea();
+    }
+
+    void DrawConvergenceScore()
+    {
+        if (inputRecorder == null || leftPanel == null) return;
+        
+        if (docScoreStyle == null)
+        {
+            docScoreStyle = new GUIStyle(GUI.skin.label);
+            docScoreStyle.fontSize = 20;
+            docScoreStyle.fontStyle = FontStyle.Bold;
+            docScoreStyle.alignment = TextAnchor.MiddleCenter;
+            docScoreStyle.normal.textColor = new Color(0.2f, 0.8f, 0.4f, 1f); // Greenish
+        }
+
+        float elapsed = Time.time - startTime;
+        InputFrame frame = inputRecorder.GetInterpolatedFrameAtTime(elapsed);
+        
+        // Calculate Convergence Score (Inverse of Divergence)
+        // Divergence is roughly 0-2+. Convergence should be 0-1 or 0-100.
+        // Formula: 1 / (1 + divergence) ensures it starts at 1 (when div=0) and decreases.
+        float divergence = frame.currentDivergence;
+        float convergence = 1.0f / (1.0f + divergence);
+        
+        // Get position above the Left Panel (Replay)
+        Vector3[] corners = new Vector3[4];
+        leftPanel.GetComponent<RectTransform>().GetWorldCorners(corners);
+        
+        // Invert Y for GUI.Label (WorldCorners starts bottom-left, GUI starts top-left)
+        float topY = corners[1].y; 
+        float guiY = Screen.height - topY;
+        
+        float centerX = (corners[0].x + corners[2].x) * 0.5f;
+        float width = corners[2].x - corners[0].x;
+        
+        string text = $"CONVERGENCE SCORE: {convergence * 100f:F0}%";
+        GUI.Label(new Rect(centerX - width/2f, guiY - 40f, width, 30f), text, docScoreStyle);
     }
 }

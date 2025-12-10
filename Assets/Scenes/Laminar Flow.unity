@@ -336,7 +336,7 @@ MonoBehaviour:
   dampeningRecoveryRate: 0.5
   currentDivergence: 0
   divergenceSmoothing: 5
-  showDebugGizmos: 0
+  showDebugGizmos: 1
 --- !u!114 &1382237306
 MonoBehaviour:
   m_ObjectHideFlags: 0

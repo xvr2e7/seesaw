@@ -2,13 +2,6 @@ using UnityEngine;
 
 /// <summary>
 /// Clean, integrated UI for game state feedback.
-///
-/// Elements:
-/// - Divergence: Number + bar displayed below existing radar (top-right)
-/// - Energy: Radial ring around cursor (handled in PlayerToolController)
-/// - Final score: Clean centered display
-///
-/// Designed to integrate with existing TurbulenceIndicatorUI radar.
 /// </summary>
 public class GameStateUI : MonoBehaviour
 {
@@ -179,8 +172,6 @@ public class GameStateUI : MonoBehaviour
         
         if (newState == GameManager.GameState.Intro)
         {
-            // FIX: Don't snap to black. 
-            // Set progress to 1 (fully faded in) so stateTransitionAlpha stays at 0.
             introFadeProgress = 1f; 
             stateTransitionAlpha = 0f;
         }
@@ -206,7 +197,7 @@ public class GameStateUI : MonoBehaviour
         // Draw fade overlay
         DrawFadeOverlay();
         
-        // Draw final score
+        // Draw final score (now suppressed)
         if (showingFinalScore && currentGameState == GameManager.GameState.Complete)
         {
             DrawFinalScore();
@@ -246,7 +237,6 @@ public class GameStateUI : MonoBehaviour
         GUI.color = fillColor;
         GUI.DrawTexture(new Rect(contentX, currentY, divergenceBarWidth * fillRatio, divergenceBarHeight), whiteTexture);
         GUI.color = Color.white;
-        
     }
     
     void DrawFadeOverlay()
@@ -260,40 +250,8 @@ public class GameStateUI : MonoBehaviour
     
     void DrawFinalScore()
     {
-        if (whiteTexture == null) return;
-        
-        float sw = Screen.width;
-        float sh = Screen.height;
-        
-        float panelWidth = 300f;
-        float panelHeight = 150f;
-        float panelX = (sw - panelWidth) * 0.5f;
-        float panelY = (sh - panelHeight) * 0.5f - 30f;
-        
-        // Panel background
-        GUI.color = new Color(0.08f, 0.08f, 0.08f, 0.95f);
-        GUI.DrawTexture(new Rect(panelX, panelY, panelWidth, panelHeight), whiteTexture);
-        
-        // Border
-        GUI.color = new Color(0.3f, 0.3f, 0.3f, 0.8f);
-        float borderWidth = 1f;
-        GUI.DrawTexture(new Rect(panelX, panelY, panelWidth, borderWidth), whiteTexture);
-        GUI.DrawTexture(new Rect(panelX, panelY + panelHeight - borderWidth, panelWidth, borderWidth), whiteTexture);
-        GUI.DrawTexture(new Rect(panelX, panelY, borderWidth, panelHeight), whiteTexture);
-        GUI.DrawTexture(new Rect(panelX + panelWidth - borderWidth, panelY, borderWidth, panelHeight), whiteTexture);
-        GUI.color = Color.white;
-        
-        // Score label
-        GUI.Label(new Rect(panelX, panelY + 20f, panelWidth, 20f), "SCORE", scoreLabelStyle);
-        
-        // Score value
-        string scoreText = displayedScore.ToString("F2");
-        GUI.Label(new Rect(panelX, panelY + 45f, panelWidth, 60f), scoreText, scoreStyle);
-        
-        // Benchmark reference
-        float benchmarkY = panelY + 115f;
-        string benchmarkText = "BASELINE: 0.50";
-        GUI.Label(new Rect(panelX, benchmarkY, panelWidth, 20f), benchmarkText, scoreLabelStyle);
+        // Suppressed as per request (score shown in Documentary phase now)
+        return;
     }
     
     void OnDestroy()

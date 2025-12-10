@@ -179,8 +179,10 @@ public class GameStateUI : MonoBehaviour
         
         if (newState == GameManager.GameState.Intro)
         {
-            introFadeProgress = 0f;
-            stateTransitionAlpha = 1f;
+            // FIX: Don't snap to black. 
+            // Set progress to 1 (fully faded in) so stateTransitionAlpha stays at 0.
+            introFadeProgress = 1f; 
+            stateTransitionAlpha = 0f;
         }
         else if (newState == GameManager.GameState.Complete)
         {

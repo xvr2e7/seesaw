@@ -382,8 +382,8 @@ MonoBehaviour:
   maxDampeningStrength: 1
   rampUpTime: 1.5
   maxEnergy: 100
-  energyDrainRate: 20
-  energyRegenRate: 8
+  energyDrainRate: 10
+  energyRegenRate: 15
   regenDelay: 0.5
   minActivationEnergy: 5
   energyStrengthCurve:

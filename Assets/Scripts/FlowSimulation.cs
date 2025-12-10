@@ -3,19 +3,23 @@ using UnityEngine;
 public class FlowSimulation : MonoBehaviour
 {
     [Header("Simulation Settings")]
-    public int agentCount = 300;
+    public int agentCount = 800;
     
     public float worldHeight = 60f;
     public float targetAspectRatio = 1.778f; // 16:9
     
     [Header("Movement Settings")]
-    public float moveSpeed = 2f;
+    public float moveSpeed = 1f;
     
     [Range(0f, 5f)]
-    public float wanderStrength = 1.5f;
+    public float wanderStrength = 2.0f;
     
-    [Range(0f, 10f)]
-    public float turnSpeed = 3f;
+    [Range(0f, 20f)]
+    public float turnSpeed = 5f;
+
+    [Header("Dampening Physics")]
+    [Tooltip("How fast agents recover from being dampened (lower = effect lasts longer)")]
+    public float dampeningRecoveryRate = 0.5f; 
     
     [Header("Flow Metrics")]
     [Tooltip("Current average divergence from mean flow (turbulence indicator)")]
@@ -23,7 +27,7 @@ public class FlowSimulation : MonoBehaviour
     
     [Tooltip("Smoothing for divergence calculation")]
     [Range(0.5f, 10f)]
-    public float divergenceSmoothing = 3f;
+    public float divergenceSmoothing = 5f;
     
     [Header("Debug")]
     public bool showDebugGizmos = true;
@@ -32,6 +36,7 @@ public class FlowSimulation : MonoBehaviour
     private Vector2[] positions;
     private Vector2[] velocities;
     private Vector2[] desiredDirections;
+    private float[] dampeningFactors; // 0 = normal, 1 = fully suppressed
     
     private Vector2 worldSize;
     
@@ -39,6 +44,7 @@ public class FlowSimulation : MonoBehaviour
     private Vector2 meanVelocity;
     private float velocityVariance;
     
+    // Public Accessors
     public Vector2[] Positions => positions;
     public Vector2[] Velocities => velocities;
     public int AgentCount => agentCount;
@@ -55,7 +61,6 @@ public class FlowSimulation : MonoBehaviour
     /// </summary>
     public Vector2 MeanVelocity => meanVelocity;
     
-    // Ensure data is ready before other scripts access it
     void Awake()
     {
         InitializeAgents();
@@ -89,6 +94,7 @@ public class FlowSimulation : MonoBehaviour
         positions = new Vector2[agentCount];
         velocities = new Vector2[agentCount];
         desiredDirections = new Vector2[agentCount];
+        dampeningFactors = new float[agentCount];
         
         Vector2 halfSize = worldSize * 0.5f;
         
@@ -102,6 +108,7 @@ public class FlowSimulation : MonoBehaviour
             float angle = Random.Range(0f, Mathf.PI * 2f);
             desiredDirections[i] = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
             velocities[i] = desiredDirections[i] * moveSpeed;
+            dampeningFactors[i] = 0f;
         }
         
         Debug.Log($"[FlowSimulation] Initialized {agentCount} agents in {worldSize.x:F0}x{worldSize.y:F0}");
@@ -111,7 +118,10 @@ public class FlowSimulation : MonoBehaviour
     {
         for (int i = 0; i < agentCount; i++)
         {
-            float noiseAngle = (Random.value - 0.5f) * 2f * wanderStrength * dt;
+            // If heavily dampened, don't change direction much
+            float effectiveWander = wanderStrength * (1f - dampeningFactors[i]);
+
+            float noiseAngle = (Random.value - 0.5f) * 2f * effectiveWander * dt;
             float cos = Mathf.Cos(noiseAngle);
             float sin = Mathf.Sin(noiseAngle);
             Vector2 dir = desiredDirections[i];
@@ -127,7 +137,22 @@ public class FlowSimulation : MonoBehaviour
     {
         for (int i = 0; i < agentCount; i++)
         {
+            // Recover from dampening
+            if (dampeningFactors[i] > 0f)
+            {
+                dampeningFactors[i] -= dampeningRecoveryRate * dt;
+                if (dampeningFactors[i] < 0f) dampeningFactors[i] = 0f;
+            }
+
             Vector2 targetVelocity = desiredDirections[i] * moveSpeed;
+            
+            // Dampened behavior: target velocity is ZERO. 
+            // This prevents them from immediately accelerating back to full speed.
+            if (dampeningFactors[i] > 0f)
+            {
+                targetVelocity = Vector2.Lerp(targetVelocity, Vector2.zero, dampeningFactors[i]);
+            }
+
             velocities[i] = Vector2.Lerp(velocities[i], targetVelocity, turnSpeed * dt);
         }
     }
@@ -219,11 +244,13 @@ public class FlowSimulation : MonoBehaviour
         meanVelocity = Vector2.Lerp(meanVelocity, newMean, smoothFactor);
         velocityVariance = Mathf.Lerp(velocityVariance, newVariance, smoothFactor);
         
-        // Normalize divergence relative to expected variance in laminar flow
-        // In perfectly laminar flow, all agents move at moveSpeed, so variance should be ~0
-        // Maximum expected variance is when agents move in opposite directions: ~(2*moveSpeed)^2
-        float maxExpectedVariance = 4f * moveSpeed * moveSpeed;
+        // Revised Metric: Normalize based on speed
+        // 0.0 = Perfectly uniform motion
+        // > 1.0 = Chaotic
         currentDivergence = Mathf.Sqrt(velocityVariance) / moveSpeed;
+        
+        // Visual clamp
+        currentDivergence = Mathf.Clamp(currentDivergence, 0f, 2f);
     }
     
     void OnDrawGizmos()
@@ -258,6 +285,9 @@ public class FlowSimulation : MonoBehaviour
             if (distSqr < radiusSqr)
             {
                 float falloff = 1f - (distSqr / radiusSqr);
+                
+                // Breaking the dampening lock when force is applied allows turbulence to "win"
+                dampeningFactors[i] *= 0.8f; 
                 velocities[i] += force * falloff;
             }
         }
@@ -275,7 +305,12 @@ public class FlowSimulation : MonoBehaviour
             if (distSqr < radiusSqr)
             {
                 float falloff = 1f - (distSqr / radiusSqr);
-                velocities[i] *= (1f - dampening * falloff);
+                
+                // Add to persistent dampening factor
+                dampeningFactors[i] = Mathf.Min(dampeningFactors[i] + dampening * falloff * 0.1f, 1f);
+                
+                // Also apply immediate velocity cut
+                velocities[i] *= (1f - dampening * falloff * 0.2f);
             }
         }
     }
@@ -286,6 +321,8 @@ public class FlowSimulation : MonoBehaviour
     public void InjectCircularTurbulence(Vector2 center, float radius, float strength, float dt)
     {
         float radiusSqr = radius * radius;
+        float adjustedStrength = strength * 5f; // Buffed for dramatic effect
+        
         for (int i = 0; i < agentCount; i++)
         {
             Vector2 toCenter = center - positions[i];
@@ -299,7 +336,7 @@ public class FlowSimulation : MonoBehaviour
                 
                 // Tangent direction (perpendicular to center)
                 Vector2 tangent = new Vector2(-toCenter.y, toCenter.x).normalized;
-                velocities[i] += tangent * strength * falloff * dt;
+                velocities[i] += tangent * adjustedStrength * falloff * dt;
             }
         }
     }
@@ -310,6 +347,8 @@ public class FlowSimulation : MonoBehaviour
     public void InjectScatterTurbulence(Vector2 center, float radius, float strength, float dt)
     {
         float radiusSqr = radius * radius;
+        float adjustedStrength = strength * 8f; // Buffed for dramatic effect
+
         for (int i = 0; i < agentCount; i++)
         {
             Vector2 fromCenter = positions[i] - center;
@@ -329,7 +368,7 @@ public class FlowSimulation : MonoBehaviour
                     outward.x * Mathf.Sin(noiseAngle) + outward.y * Mathf.Cos(noiseAngle)
                 );
                 
-                velocities[i] += noisy * strength * falloff * dt;
+                velocities[i] += noisy * adjustedStrength * falloff * dt;
             }
         }
     }
@@ -340,6 +379,8 @@ public class FlowSimulation : MonoBehaviour
     public void InjectVortexTurbulence(Vector2 center, float radius, float strength, float inwardPull, float dt)
     {
         float radiusSqr = radius * radius;
+        float adjustedStrength = strength * 6f; // Buffed
+
         for (int i = 0; i < agentCount; i++)
         {
             Vector2 toCenter = center - positions[i];
@@ -356,7 +397,7 @@ public class FlowSimulation : MonoBehaviour
                 
                 // Spiral: mostly tangent with some inward pull
                 Vector2 spiral = tangent + dirToCenter * inwardPull;
-                velocities[i] += spiral.normalized * strength * falloff * dt;
+                velocities[i] += spiral.normalized * adjustedStrength * falloff * dt;
             }
         }
     }

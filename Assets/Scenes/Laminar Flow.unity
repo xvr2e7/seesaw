@@ -304,11 +304,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ad3303106091d3a4e967f2e92fc8140c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  flowSimulation: {fileID: 1382237305}
+  flowSimulation: {fileID: 0}
   agentMesh: {fileID: 0}
-  agentMaterial: {fileID: 2100000, guid: fd392764eeb787c43b4e43aaf60a7487, type: 2}
-  agentSize: 0.3
-  renderHeight: 0.1
+  agentMaterial: {fileID: 0}
+  agentSize: 0.25
+  renderHeight: 0
   agentOpacity: 0.6
   colorByVelocity: 1
   hueOffset: 0
@@ -327,14 +327,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e66a41b2b00d32641bdc6727820fad16, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  agentCount: 300
+  agentCount: 800
   worldHeight: 60
   targetAspectRatio: 1.778
-  moveSpeed: 2
-  wanderStrength: 1.5
-  turnSpeed: 3
+  moveSpeed: 1
+  wanderStrength: 2
+  turnSpeed: 5
+  dampeningRecoveryRate: 0.5
   currentDivergence: 0
-  divergenceSmoothing: 3
+  divergenceSmoothing: 5
   showDebugGizmos: 0
 --- !u!114 &1382237306
 MonoBehaviour:
@@ -348,15 +349,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 29b2ba9c6df91fe41a99972f16b0552e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  flowSimulation: {fileID: 1382237305}
-  gridResolution: 128
-  temporalSmoothing: 8
-  flowMaterial: {fileID: 2100000, guid: 3a3f96550a256e548bf4a0edd1b5d34f, type: 2}
-  velocityScale: 1.5
-  saturationMin: 0.1
-  saturationMax: 0.95
-  valueMin: 0.1
-  valueMax: 0.9
+  flowSimulation: {fileID: 0}
+  gridResolution: 256
+  temporalSmoothing: 5
+  flowMaterial: {fileID: 0}
+  velocityScale: 3
+  saturationMin: 0.2
+  saturationMax: 1
+  valueMin: 0.05
+  valueMax: 1
   hueOffset: 0
   showDebugInfo: 0
 --- !u!114 &1382237307
@@ -429,18 +430,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5cec97500d6439a428480fb9fc5f9649, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  flowSimulation: {fileID: 1382237305}
+  flowSimulation: {fileID: 0}
   useScriptedEvents: 1
   enableRandomEvents: 1
-  minEventInterval: 8
-  maxEventInterval: 20
-  initialDelay: 15
+  minEventInterval: 6
+  maxEventInterval: 15
+  initialDelay: 10
   maxSimultaneousEvents: 3
   randomEventCutoff: 240
   minRadius: 5
   maxRadius: 15
-  minDuration: 5
-  maxDuration: 15
+  minDuration: 6
+  maxDuration: 12
   strengthMultiplier: 1
   scaleDifficulty: 1
   difficultyRamp: 0.02

@@ -2,13 +2,6 @@ using UnityEngine;
 
 /// <summary>
 /// Defines a turbulence event - a localized disturbance in the flow field.
-/// Each pattern type metaphorically represents different forms of human gathering:
-/// - Circular: peaceful assembly forming a circle
-/// - Scatter: panic, people running in all directions
-/// - Vortex: crowd swirling around a focal point
-/// - Wave: coordinated movement like a march
-/// - Oscillation: back-and-forth movement
-/// - Cluster: sit-in or blockade
 /// </summary>
 [System.Serializable]
 public class TurbulenceEvent
@@ -32,7 +25,7 @@ public class TurbulenceEvent
     public Vector2 position;
     
     [Tooltip("Radius of effect")]
-    public float radius = 10f;
+    public float radius = 15f; // Increased default
     
     [Tooltip("Inner radius for ring-shaped effects (0 = solid circle)")]
     public float innerRadius = 0f;
@@ -52,11 +45,11 @@ public class TurbulenceEvent
     
     [Header("Intensity")]
     [Tooltip("Base strength of the effect")]
-    [Range(0f, 10f)]
-    public float strength = 3f;
+    [Range(0f, 50f)]
+    public float strength = 25f; // Massively increased default (was 3)
     
     [Tooltip("How quickly the pattern evolves")]
-    public float frequency = 1f;
+    public float frequency = 2f;
     
     [Tooltip("Direction for directional patterns (Wave)")]
     public Vector2 direction = Vector2.right;
@@ -83,8 +76,9 @@ public class TurbulenceEvent
         
         // Calculate falloff (1 at inner edge, 0 at outer edge)
         float normalizedDist = (dist - innerRadius) / (radius - innerRadius);
-        float falloff = 1f - normalizedDist;
-        falloff = falloff * falloff; // Quadratic falloff for smoother edges
+        
+        // Sharper, more defined edges
+        float falloff = Mathf.SmoothStep(1f, 0f, normalizedDist); 
         
         Vector2 force = Vector2.zero;
         Vector2 dirToCenter = dist > 0.001f ? toCenter / dist : Vector2.up;
@@ -100,35 +94,34 @@ public class TurbulenceEvent
                 break;
 
             case PatternType.Scatter:
-                // Random outward push with noise
-                float noiseAngle = Mathf.PerlinNoise(agentPos.x * 0.1f + phase, agentPos.y * 0.1f) * Mathf.PI * 2f;
+                // Explosive chaos
+                float noiseAngle = Mathf.PerlinNoise(agentPos.x * 0.2f + phase, agentPos.y * 0.2f) * Mathf.PI * 4f;
                 Vector2 noiseDir = new Vector2(Mathf.Cos(noiseAngle), Mathf.Sin(noiseAngle));
-                force = (-dirToCenter * 0.5f + noiseDir * 0.5f).normalized * strength;
+                // Strong outward push + noise
+                force = (-dirToCenter * 1.5f + noiseDir * 1.0f).normalized * strength;
                 break;
 
             case PatternType.Vortex:
-                // Spiral inward while rotating
+                // Black hole suction
                 float spiralStrength = Mathf.Sin(phase) * 0.3f + 0.7f;
-                force = (tangent * 0.8f + dirToCenter * 0.2f * spiralStrength) * strength;
+                force = (tangent * 1.5f + dirToCenter * 0.8f * spiralStrength) * strength;
                 break;
 
             case PatternType.Wave:
                 // Sinusoidal wave in specified direction
-                float wavePhase = Vector2.Dot(agentPos, direction.normalized) * 0.2f + phase;
+                float wavePhase = Vector2.Dot(agentPos, direction.normalized) * 0.3f + phase;
                 float waveForce = Mathf.Sin(wavePhase);
                 force = direction.normalized * waveForce * strength;
                 break;
 
             case PatternType.Oscillation:
-                // Back and forth movement
-                float oscPhase = Mathf.Sin(phase + dist * 0.1f);
-                force = direction.normalized * oscPhase * strength;
+                // Violent shaking
+                force = Random.insideUnitCircle * strength;
                 break;
 
             case PatternType.Cluster:
-                // Slow down and cluster (negative force opposing velocity)
-                // This is handled specially in the simulation - here we apply inward pull
-                force = dirToCenter * strength * 0.5f;
+                // Implosion
+                force = dirToCenter * strength * 0.8f;
                 break;
         }
         
@@ -151,7 +144,8 @@ public class TurbulenceEvent
         float normalizedDist = (dist - innerRadius) / (radius - innerRadius);
         float falloff = 1f - normalizedDist;
         
-        return falloff * currentIntensity * 0.8f; // Up to 80% velocity reduction
+        // Stronger dampening for clusters
+        return falloff * currentIntensity * 0.95f; 
     }
     
     /// <summary>

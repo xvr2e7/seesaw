@@ -12,31 +12,30 @@ public class FlowVisualizer : MonoBehaviour
     
     [Header("Grid Settings")]
     [Tooltip("Resolution of the velocity grid texture")]
-    public int gridResolution = 128;
+    public int gridResolution = 256;
     
     [Tooltip("How quickly the flow field responds to changes")]
     [Range(0.5f, 20f)]
-    public float temporalSmoothing = 8f;
+    public float temporalSmoothing = 5f;
     
     [Header("Visualization")]
     public Material flowMaterial;
     
     [Tooltip("Multiplier for velocity magnitude affecting color saturation/brightness")]
-    [Range(0.1f, 5f)]
-    public float velocityScale = 1.5f;
-    
+    [Range(0.1f, 10f)]
+    public float velocityScale = 3.0f;
     [Header("Appearance")]
     [Range(0f, 1f)]
-    public float saturationMin = 0.4f;
+    public float saturationMin = 0.2f;
     
     [Range(0f, 1f)]
-    public float saturationMax = 0.95f;
+    public float saturationMax = 1.0f;
     
     [Range(0f, 1f)]
-    public float valueMin = 0.2f;
+    public float valueMin = 0.05f;
     
     [Range(0f, 1f)]
-    public float valueMax = 0.9f;
+    public float valueMax = 1.5f;
     
     [Tooltip("Hue rotation offset in degrees")]
     [Range(0f, 360f)]
@@ -165,12 +164,7 @@ public class FlowVisualizer : MonoBehaviour
         flowMaterial = new Material(flowShader);
         flowMaterial.name = "FlowVisualization_Runtime";
         
-        // Set default values
-        flowMaterial.SetTexture(VelocityTexProperty, velocityTexture);
-        flowMaterial.SetFloat(VelocityScaleProperty, velocityScale);
-        flowMaterial.SetVector(SaturationRangeProperty, new Vector4(saturationMin, saturationMax, 0f, 0f));
-        flowMaterial.SetVector(ValueRangeProperty, new Vector4(valueMin, valueMax, 0f, 0f));
-        flowMaterial.SetFloat(HueOffsetProperty, hueOffset / 360f);
+        UpdateShaderProperties();
     }
     
     void SetupFlowQuad()
@@ -286,41 +280,32 @@ public class FlowVisualizer : MonoBehaviour
     {
         float dt = Time.deltaTime;
         float smoothFactor = 1f - Mathf.Exp(-temporalSmoothing * dt);
-        
-        float maxExpectedSpeed = flowSimulation.moveSpeed * 2f;
-        
+        float baseSpeed = flowSimulation.moveSpeed;
+
         for (int i = 0; i < velocityPixels.Length; i++)
         {
-            Vector2 newVel = Vector2.zero;
-            
+            Vector2 target = Vector2.zero;
             if (weightAccumulator[i] > 0.001f)
             {
-                newVel = velocityAccumulator[i] / weightAccumulator[i];
+                target = velocityAccumulator[i] / weightAccumulator[i];
             }
             
-            // Get current velocity from pixel (convert from 0-1 back to -1 to 1 range)
-            Vector2 currentVel = new Vector2(
-                (velocityPixels[i].r - 0.5f) * 2f * maxExpectedSpeed,
-                (velocityPixels[i].g - 0.5f) * 2f * maxExpectedSpeed
-            );
+            // Decode previous value (-1 to 1 range approx)
+            Vector2 current = new Vector2(
+                (velocityPixels[i].r - 0.5f) * 2f,
+                (velocityPixels[i].g - 0.5f) * 2f
+            ) * baseSpeed;
             
             // Temporal smoothing
-            Vector2 smoothedVel = Vector2.Lerp(currentVel, newVel, smoothFactor);
+            Vector2 blended = Vector2.Lerp(current, target, smoothFactor);
+            float mag = blended.magnitude;
             
-            // Store velocity magnitude in blue channel for shader use
-            float magnitude = smoothedVel.magnitude;
-            
-            // Convert velocity to 0-1 range for texture storage
-            Vector2 normalizedVel = smoothedVel / maxExpectedSpeed;
-            
-            // Has data if there's any velocity or weight
-            float hasData = (weightAccumulator[i] > 0.001f || magnitude > 0.01f) ? 1f : 0.5f;
-            
+            // Encode (0-1 range)
             velocityPixels[i] = new Color(
-                Mathf.Clamp01(normalizedVel.x * 0.5f + 0.5f),  // R: velocity X
-                Mathf.Clamp01(normalizedVel.y * 0.5f + 0.5f),  // G: velocity Y
-                Mathf.Clamp01(magnitude / maxExpectedSpeed),    // B: magnitude
-                hasData                                          // A: data presence
+                Mathf.Clamp01((blended.x / baseSpeed) * 0.5f + 0.5f),
+                Mathf.Clamp01((blended.y / baseSpeed) * 0.5f + 0.5f),
+                mag / baseSpeed, // Store raw magnitude ratio in Blue
+                1f // Alpha unused for now, or could store density
             );
         }
         
@@ -332,6 +317,7 @@ public class FlowVisualizer : MonoBehaviour
     {
         if (flowMaterial == null) return;
         
+        flowMaterial.SetTexture(VelocityTexProperty, velocityTexture);
         flowMaterial.SetFloat(VelocityScaleProperty, velocityScale);
         flowMaterial.SetVector(SaturationRangeProperty, new Vector4(saturationMin, saturationMax, 0f, 0f));
         flowMaterial.SetVector(ValueRangeProperty, new Vector4(valueMin, valueMax, 0f, 0f));

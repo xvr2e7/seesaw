@@ -152,7 +152,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   flowSimulation: {fileID: 1382237305}
-  playerTool: {fileID: 1382237307}
+  playerTool: {fileID: 0}
   particlesPerAgent: 2
   spawnChance: 0.3
   maxParticlesPerFrame: 50
@@ -208,7 +208,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   gameManager: {fileID: 1718674880}
-  playerTool: {fileID: 1382237307}
+  playerTool: {fileID: 0}
   cameraController: {fileID: 2057931244}
   flowSimulation: {fileID: 1382237305}
   recordingInterval: 2
@@ -230,6 +230,64 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1096061145
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1096061147}
+  - component: {fileID: 1096061148}
+  m_Layer: 0
+  m_Name: PlayerTool
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1096061147
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1096061145}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1096061148
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1096061145}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d70ed4c13f394474998082e929e51256, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  flowSimulation: {fileID: 1382237305}
+  mainCamera: {fileID: 2057931241}
+  samplingGrid: {fileID: 0}
+  energySystem: {fileID: 0}
+  performanceTracker: {fileID: 0}
+  turbulenceClassifier: {fileID: 0}
+  baseRadius: 8
+  minRadius: 2
+  maxRadius: 25
+  scrollSensitivity: 0.5
+  baseDampeningStrength: 0.3
+  maxDampeningStrength: 0.85
+  rampUpTime: 1.5
+  showDebugInfo: 0
 --- !u!1 &1356720804
 GameObject:
   m_ObjectHideFlags: 0
@@ -297,7 +355,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   gameManager: {fileID: 1718674880}
-  playerTool: {fileID: 1382237307}
+  playerTool: {fileID: 0}
   flowSimulation: {fileID: 1382237305}
   rightMargin: 20
   topOffset: 170
@@ -324,7 +382,6 @@ GameObject:
   - component: {fileID: 1382237305}
   - component: {fileID: 1382237304}
   - component: {fileID: 1382237306}
-  - component: {fileID: 1382237307}
   - component: {fileID: 1382237308}
   m_Layer: 0
   m_Name: SimulationManager
@@ -419,66 +476,6 @@ MonoBehaviour:
   valueMin: 0.05
   valueMax: 1
   hueOffset: 0
-  showDebugInfo: 0
---- !u!114 &1382237307
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1382237302}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d70ed4c13f394474998082e929e51256, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  flowSimulation: {fileID: 1382237305}
-  mainCamera: {fileID: 2057931241}
-  toolRadius: 3
-  minRadius: 1
-  maxRadius: 5
-  scrollSensitivity: 0.4
-  baseDampeningStrength: 0.5
-  maxDampeningStrength: 1
-  rampUpTime: 1.5
-  maxEnergy: 100
-  energyDrainRate: 10
-  energyRegenRate: 15
-  regenDelay: 0.5
-  minActivationEnergy: 5
-  energyStrengthCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0.3
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  ringColorFull: {r: 0.9, g: 0.95, b: 1, a: 0.8}
-  ringColorLow: {r: 1, g: 0.6, b: 0.3, a: 0.6}
-  ringColorDepleted: {r: 0.5, g: 0.3, b: 0.3, a: 0.3}
-  energyRingColor: {r: 0.4, g: 0.8, b: 0.5, a: 0.7}
-  energyRingColorLow: {r: 0.9, g: 0.4, b: 0.2, a: 0.7}
-  ringThicknessFraction: 0.03
-  energyRingOffset: 0.4
-  pulseSpeed: 8
-  pulseIntensity: 0.3
   showDebugInfo: 0
 --- !u!114 &1382237308
 MonoBehaviour:
@@ -589,7 +586,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   flowSimulation: {fileID: 1382237305}
   eventScheduler: {fileID: 1382237308}
-  playerTool: {fileID: 1382237307}
+  playerTool: {fileID: 0}
   cameraController: {fileID: 2057931244}
   soundscape: {fileID: 1940927234}
   gameStateUI: {fileID: 1356720807}
@@ -1064,9 +1061,10 @@ SceneRoots:
   - {fileID: 1783634601}
   - {fileID: 1382237303}
   - {fileID: 1356720805}
-  - {fileID: 1940927233}
   - {fileID: 1718674881}
+  - {fileID: 1096061147}
+  - {fileID: 1940927233}
   - {fileID: 755271955}
-  - {fileID: 1797351079}
   - {fileID: 279401980}
+  - {fileID: 1797351079}
   - {fileID: 1461106180}

@@ -139,7 +139,10 @@ public class InputRecorder : MonoBehaviour
             frame.toolRadius = toolState.radius;
             frame.toolStrength = toolState.strength;
             frame.toolActive = toolState.isActive;
-            frame.toolEnergy = playerTool.GetCurrentEnergy();
+
+            // Get energy from ToolEnergySystem component
+            var energySystem = playerTool.GetComponent<ToolEnergySystem>();
+            frame.toolEnergy = energySystem != null ? energySystem.CurrentEnergy : 0f;
         }
         
         // Camera state

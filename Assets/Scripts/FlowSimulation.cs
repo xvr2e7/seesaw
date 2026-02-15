@@ -10,10 +10,15 @@ public class FlowSimulation : MonoBehaviour
     
     [Header("Movement Settings")]
     public float moveSpeed = 1f;
-    
+
     [Range(0f, 5f)]
-    public float wanderStrength = 2.0f;
-    
+    [Tooltip("Base wander strength when calm (low = more uniform flow)")]
+    public float baseWanderStrength = 0.05f;
+
+    [Range(0f, 5f)]
+    [Tooltip("Wander strength when turbulent (high = chaotic motion)")]
+    public float turbulentWanderStrength = 2.5f;
+
     [Range(0f, 20f)]
     public float turnSpeed = 5f;
 
@@ -37,6 +42,8 @@ public class FlowSimulation : MonoBehaviour
     private Vector2[] velocities;
     private Vector2[] desiredDirections;
     private float[] dampeningFactors; // 0 = normal, 1 = fully suppressed
+    private float[] turbulenceInfluence; // 0 = calm, 1 = highly turbulent
+    private int[] turbulencePattern; // Pattern type ID (0 = none, 1-6 = pattern types)
     
     private Vector2 worldSize;
     
@@ -51,6 +58,9 @@ public class FlowSimulation : MonoBehaviour
     // Public Accessors
     public Vector2[] Positions => positions;
     public Vector2[] Velocities => velocities;
+    public float[] TurbulenceInfluence => turbulenceInfluence;
+    public int[] TurbulencePattern => turbulencePattern;
+    public float[] DampeningFactors => dampeningFactors;
     public int AgentCount => agentCount;
     public Vector2 WorldSize => worldSize;
     public Vector2 WorldCenter => Vector2.zero;
@@ -90,7 +100,7 @@ public class FlowSimulation : MonoBehaviour
     {
         // Calculate world size based on target aspect ratio
         worldSize = new Vector2(worldHeight * targetAspectRatio, worldHeight);
-        
+
         // Prevent zero-size world issues
         if (worldSize.x < 1f) worldSize.x = 1f;
         if (worldSize.y < 1f) worldSize.y = 1f;
@@ -99,37 +109,47 @@ public class FlowSimulation : MonoBehaviour
         velocities = new Vector2[agentCount];
         desiredDirections = new Vector2[agentCount];
         dampeningFactors = new float[agentCount];
-        
+        turbulenceInfluence = new float[agentCount];
+        turbulencePattern = new int[agentCount];
+
         Vector2 halfSize = worldSize * 0.5f;
-        
+
+        // Uniform diagonal flow direction (45 degrees: top-right)
+        Vector2 uniformDirection = new Vector2(1f, 1f).normalized;
+
         for (int i = 0; i < agentCount; i++)
         {
             positions[i] = new Vector2(
                 Random.Range(-halfSize.x, halfSize.x),
                 Random.Range(-halfSize.y, halfSize.y)
             );
-            
-            float angle = Random.Range(0f, Mathf.PI * 2f);
-            desiredDirections[i] = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+
+            // All agents start with the same diagonal direction
+            desiredDirections[i] = uniformDirection;
             velocities[i] = desiredDirections[i] * moveSpeed;
             dampeningFactors[i] = 0f;
+            turbulenceInfluence[i] = 0f;
         }
-        
-        Debug.Log($"[FlowSimulation] Initialized {agentCount} agents in {worldSize.x:F0}x{worldSize.y:F0}");
+
+        Debug.Log($"[FlowSimulation] Initialized {agentCount} agents with uniform diagonal flow in {worldSize.x:F0}x{worldSize.y:F0}");
     }
     
     void UpdateWanderDirections(float dt)
     {
         for (int i = 0; i < agentCount; i++)
         {
-            // If heavily dampened, don't change direction much
-            float effectiveWander = wanderStrength * (1f - dampeningFactors[i]);
+            // Wander strength varies based on state:
+            // - Low when calm (uniform flow)
+            // - High when turbulent (chaotic motion)
+            // - Low when dampened (suppressed)
+            float targetWanderStrength = Mathf.Lerp(baseWanderStrength, turbulentWanderStrength, turbulenceInfluence[i]);
+            float effectiveWander = targetWanderStrength * (1f - dampeningFactors[i]);
 
             float noiseAngle = (Random.value - 0.5f) * 2f * effectiveWander * dt;
             float cos = Mathf.Cos(noiseAngle);
             float sin = Mathf.Sin(noiseAngle);
             Vector2 dir = desiredDirections[i];
-            
+
             desiredDirections[i] = new Vector2(
                 dir.x * cos - dir.y * sin,
                 dir.x * sin + dir.y * cos
@@ -148,9 +168,20 @@ public class FlowSimulation : MonoBehaviour
                 if (dampeningFactors[i] < 0f) dampeningFactors[i] = 0f;
             }
 
+            // Decay turbulence influence over time
+            if (turbulenceInfluence[i] > 0f)
+            {
+                turbulenceInfluence[i] -= dt * 2f; // Decay faster for clearer visual feedback
+                if (turbulenceInfluence[i] < 0f)
+                {
+                    turbulenceInfluence[i] = 0f;
+                    turbulencePattern[i] = 0; // Reset pattern when turbulence fully decays
+                }
+            }
+
             Vector2 targetVelocity = desiredDirections[i] * moveSpeed;
-            
-            // Dampened behavior: target velocity is ZERO. 
+
+            // Dampened behavior: target velocity is ZERO.
             // This prevents them from immediately accelerating back to full speed.
             if (dampeningFactors[i] > 0f)
             {
@@ -282,6 +313,8 @@ public class FlowSimulation : MonoBehaviour
 
     /// <summary>
     /// Apply a force to all agents within a radius
+    /// NOTE: This is a low-level method that does NOT mark agents as turbulent
+    /// Use the InjectXXXTurbulence methods instead for turbulence events
     /// </summary>
     public void ApplyForceInRadius(Vector2 center, float radius, Vector2 force)
     {
@@ -292,9 +325,9 @@ public class FlowSimulation : MonoBehaviour
             if (distSqr < radiusSqr)
             {
                 float falloff = 1f - (distSqr / radiusSqr);
-                
+
                 // Breaking the dampening lock when force is applied allows turbulence to "win"
-                dampeningFactors[i] *= 0.8f; 
+                dampeningFactors[i] *= 0.8f;
                 velocities[i] += force * falloff;
             }
         }
@@ -331,19 +364,23 @@ public class FlowSimulation : MonoBehaviour
     public void InjectCircularTurbulence(Vector2 center, float radius, float strength, float dt)
     {
         float radiusSqr = radius * radius;
-        float adjustedStrength = strength * 5f; 
-        
+        float adjustedStrength = strength * 5f;
+
         for (int i = 0; i < agentCount; i++)
         {
             Vector2 toCenter = center - positions[i];
             float distSqr = toCenter.sqrMagnitude;
-            
+
             if (distSqr < radiusSqr && distSqr > 0.01f)
             {
                 float dist = Mathf.Sqrt(distSqr);
                 float falloff = 1f - (dist / radius);
                 falloff *= falloff;
-                
+
+                // Mark as turbulent (normalize strength to 0-1 range)
+                float normalizedStrength = Mathf.Clamp01(strength);
+                turbulenceInfluence[i] = Mathf.Max(turbulenceInfluence[i], falloff * normalizedStrength);
+
                 Vector2 tangent = new Vector2(-toCenter.y, toCenter.x).normalized;
                 velocities[i] += tangent * adjustedStrength * falloff * dt;
             }
@@ -356,26 +393,30 @@ public class FlowSimulation : MonoBehaviour
     public void InjectScatterTurbulence(Vector2 center, float radius, float strength, float dt)
     {
         float radiusSqr = radius * radius;
-        float adjustedStrength = strength * 8f; 
+        float adjustedStrength = strength * 8f;
 
         for (int i = 0; i < agentCount; i++)
         {
             Vector2 fromCenter = positions[i] - center;
             float distSqr = fromCenter.sqrMagnitude;
-            
+
             if (distSqr < radiusSqr && distSqr > 0.01f)
             {
                 float dist = Mathf.Sqrt(distSqr);
                 float falloff = 1f - (dist / radius);
                 falloff *= falloff;
-                
+
+                // Mark as turbulent (normalize strength to 0-1 range)
+                float normalizedStrength = Mathf.Clamp01(strength);
+                turbulenceInfluence[i] = Mathf.Max(turbulenceInfluence[i], falloff * normalizedStrength);
+
                 Vector2 outward = fromCenter.normalized;
                 float noiseAngle = (Mathf.PerlinNoise(positions[i].x * 0.1f, positions[i].y * 0.1f) - 0.5f) * Mathf.PI;
                 Vector2 noisy = new Vector2(
                     outward.x * Mathf.Cos(noiseAngle) - outward.y * Mathf.Sin(noiseAngle),
                     outward.x * Mathf.Sin(noiseAngle) + outward.y * Mathf.Cos(noiseAngle)
                 );
-                
+
                 velocities[i] += noisy * adjustedStrength * falloff * dt;
             }
         }
@@ -387,22 +428,26 @@ public class FlowSimulation : MonoBehaviour
     public void InjectVortexTurbulence(Vector2 center, float radius, float strength, float inwardPull, float dt)
     {
         float radiusSqr = radius * radius;
-        float adjustedStrength = strength * 6f; 
+        float adjustedStrength = strength * 6f;
 
         for (int i = 0; i < agentCount; i++)
         {
             Vector2 toCenter = center - positions[i];
             float distSqr = toCenter.sqrMagnitude;
-            
+
             if (distSqr < radiusSqr && distSqr > 0.01f)
             {
                 float dist = Mathf.Sqrt(distSqr);
                 float falloff = 1f - (dist / radius);
                 falloff *= falloff;
-                
+
+                // Mark as turbulent (normalize strength to 0-1 range)
+                float normalizedStrength = Mathf.Clamp01(strength);
+                turbulenceInfluence[i] = Mathf.Max(turbulenceInfluence[i], falloff * normalizedStrength);
+
                 Vector2 dirToCenter = toCenter / dist;
                 Vector2 tangent = new Vector2(-dirToCenter.y, dirToCenter.x);
-                
+
                 Vector2 spiral = tangent + dirToCenter * inwardPull;
                 velocities[i] += spiral.normalized * adjustedStrength * falloff * dt;
             }

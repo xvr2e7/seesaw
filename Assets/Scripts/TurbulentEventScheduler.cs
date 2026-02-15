@@ -234,10 +234,10 @@ public class TurbulentEventScheduler : MonoBehaviour
         // Random pattern (weighted toward more visually interesting ones)
         TurbulenceEvent.PatternType pattern = GetWeightedRandomPattern();
         
-        // Random parameters scaled by difficulty
+        // Random parameters scaled by difficulty - EXTREME strengths
         float radius = Random.Range(minRadius, maxRadius) * (0.8f + currentDifficulty * 0.2f);
         float duration = Random.Range(minDuration, maxDuration);
-        float strength = Random.Range(1.5f, 3.5f) * strengthMultiplier * currentDifficulty;
+        float strength = Random.Range(3.0f, 6.0f) * strengthMultiplier * currentDifficulty;
         
         // Direction for directional patterns
         Vector2 direction = Random.insideUnitCircle.normalized;
@@ -276,22 +276,39 @@ public class TurbulentEventScheduler : MonoBehaviour
     void ApplyTurbulenceToSimulation(float dt)
     {
         if (flowSimulation.Positions == null) return;
-        
+
         Vector2[] positions = flowSimulation.Positions;
         Vector2[] velocities = flowSimulation.Velocities;
+        float[] turbulenceInfluence = flowSimulation.TurbulenceInfluence;
+        int[] turbulencePattern = flowSimulation.TurbulencePattern;
         int count = flowSimulation.AgentCount;
-        
+
         // Apply each active event
         foreach (var evt in activeEvents)
         {
             if (!evt.isActive) continue;
-            
+
+            // Pattern ID: 1=Circular, 2=Scatter, 3=Vortex, 4=Wave, 5=Oscillation, 6=Cluster
+            int patternID = (int)evt.pattern + 1;
+
             for (int i = 0; i < count; i++)
             {
                 // Calculate and apply force
                 Vector2 force = evt.CalculateForce(positions[i], simulationTime);
-                velocities[i] += force * dt;
-                
+
+                // If this agent is affected by this event, mark its pattern
+                if (force.sqrMagnitude > 0.001f)
+                {
+                    velocities[i] += force * dt;
+
+                    // Mark agent with this event's pattern type
+                    // If multiple events overlap, use the one with highest current influence
+                    if (turbulenceInfluence[i] < evt.currentIntensity)
+                    {
+                        turbulencePattern[i] = patternID;
+                    }
+                }
+
                 // Apply dampening for Cluster pattern
                 float dampen = evt.GetDampeningFactor(positions[i]);
                 if (dampen > 0f)
@@ -356,7 +373,7 @@ public class TurbulentEventScheduler : MonoBehaviour
             duration = 15f,
             fadeInTime = 2f,
             fadeOutTime = 2f,
-            strength = 2f,
+            strength = 4f,
             frequency = 0.8f
         });
 
@@ -371,7 +388,7 @@ public class TurbulentEventScheduler : MonoBehaviour
             duration = 14f,
             fadeInTime = 2f,
             fadeOutTime = 2f,
-            strength = 2.5f,
+            strength = 5f,
             frequency = 1.2f
         });
 
@@ -384,9 +401,9 @@ public class TurbulentEventScheduler : MonoBehaviour
             radius = 12f,
             startTime = 75f,
             duration = 10f,
-            fadeInTime = 0.5f, 
+            fadeInTime = 0.5f,
             fadeOutTime = 2.5f,
-            strength = 3.5f,
+            strength = 7f,
             frequency = 2f
         });
 
@@ -401,7 +418,7 @@ public class TurbulentEventScheduler : MonoBehaviour
             duration = 18f,
             fadeInTime = 3f,
             fadeOutTime = 2f,
-            strength = 2f,
+            strength = 4f,
             frequency = 0.5f
         });
 
@@ -416,7 +433,7 @@ public class TurbulentEventScheduler : MonoBehaviour
             duration = 16f,
             fadeInTime = 2f,
             fadeOutTime = 2.5f,
-            strength = 2.8f,
+            strength = 5.5f,
             frequency = 0.7f,
             direction = new Vector2(1f, 0.3f).normalized
         });
@@ -432,7 +449,7 @@ public class TurbulentEventScheduler : MonoBehaviour
             duration = 14f,
             fadeInTime = 1.5f,
             fadeOutTime = 2f,
-            strength = 2.5f,
+            strength = 5f,
             frequency = 1.2f,
             direction = new Vector2(0.7f, 0.7f).normalized
         });
@@ -448,7 +465,7 @@ public class TurbulentEventScheduler : MonoBehaviour
             duration = 12f,
             fadeInTime = 1.5f,
             fadeOutTime = 2f,
-            strength = 2.2f,
+            strength = 4.5f,
             frequency = 0.9f
         });
 
@@ -463,7 +480,7 @@ public class TurbulentEventScheduler : MonoBehaviour
             duration = 15f,
             fadeInTime = 2.5f,
             fadeOutTime = 3f,
-            strength = 3f,
+            strength = 6f,
             frequency = 1.0f
         });
 
@@ -478,7 +495,7 @@ public class TurbulentEventScheduler : MonoBehaviour
             duration = 12f,
             fadeInTime = 0.3f,
             fadeOutTime = 3f,
-            strength = 4f,
+            strength = 8f,
             frequency = 2.5f
         });
 
@@ -493,7 +510,7 @@ public class TurbulentEventScheduler : MonoBehaviour
             duration = 20f,
             fadeInTime = 4f,
             fadeOutTime = 4f,
-            strength = 1.5f,
+            strength = 3f,
             frequency = 0.3f
         });
         

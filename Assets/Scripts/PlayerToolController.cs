@@ -59,18 +59,26 @@ public class PlayerToolController : MonoBehaviour
     public AnimationCurve energyStrengthCurve = AnimationCurve.EaseInOut(0f, 0.3f, 1f, 1f);
     
     [Header("Cursor Appearance")]
-    public Color ringColorFull = new Color(0.9f, 0.95f, 1f, 0.8f);
-    public Color ringColorLow = new Color(1f, 0.6f, 0.3f, 0.6f);
+    public Color ringColorFull = new Color(0.9f, 0.95f, 1f, 0.9f);
+    public Color ringColorLow = new Color(1f, 0.6f, 0.3f, 0.7f);
     public Color ringColorDepleted = new Color(0.5f, 0.3f, 0.3f, 0.3f);
-    public Color energyRingColor = new Color(0.4f, 0.8f, 0.5f, 0.7f);
-    public Color energyRingColorLow = new Color(0.9f, 0.4f, 0.2f, 0.7f);
-    
+    public Color energyRingColor = new Color(0.4f, 0.8f, 0.5f, 0.9f);
+    public Color energyRingColorLow = new Color(0.9f, 0.4f, 0.2f, 0.9f);
+
     [Tooltip("Ring thickness as fraction of radius")]
     [Range(0.01f, 0.1f)]
-    public float ringThicknessFraction = 0.03f;
-    
+    public float ringThicknessFraction = 0.05f;
+
     [Tooltip("Energy ring offset from main ring")]
     public float energyRingOffset = 0.4f;
+
+    [Header("Active Effect Enhancements")]
+    [Tooltip("Pulsing speed when tool is active")]
+    public float pulseSpeed = 8f;
+
+    [Tooltip("Pulse intensity multiplier")]
+    [Range(0f, 1f)]
+    public float pulseIntensity = 0.3f;
     
     [Header("Debug")]
     public bool showDebugInfo = false;
@@ -125,29 +133,29 @@ public class PlayerToolController : MonoBehaviour
         // Main tool radius ring
         GameObject ringObj = new GameObject("ToolCursorRing");
         ringObj.transform.SetParent(transform);
-        
+
         ringLine = ringObj.AddComponent<LineRenderer>();
         ringLine.useWorldSpace = true;
         ringLine.loop = true;
         ringLine.positionCount = RING_SEGMENTS;
-        
+
         // Simple unlit material
         ringLine.material = new Material(Shader.Find("Sprites/Default"));
         ringLine.startColor = ringColorFull;
         ringLine.endColor = ringColorFull;
-        
+
         UpdateRingWidth();
         ringLine.sortingOrder = 100;
-        
+
         // Energy arc ring (slightly larger, shows energy as arc)
         GameObject energyObj = new GameObject("ToolEnergyRing");
         energyObj.transform.SetParent(transform);
-        
+
         energyRingLine = energyObj.AddComponent<LineRenderer>();
         energyRingLine.useWorldSpace = true;
         energyRingLine.loop = false; // Not looped - it's an arc
         energyRingLine.positionCount = RING_SEGMENTS + 1;
-        
+
         energyRingLine.material = new Material(Shader.Find("Sprites/Default"));
         energyRingLine.startColor = energyRingColor;
         energyRingLine.endColor = energyRingColor;
@@ -304,11 +312,11 @@ public class PlayerToolController : MonoBehaviour
     void UpdateRingCursor()
     {
         if (ringLine == null) return;
-        
+
         // Update main ring color based on state
         Color ringColor;
         float energyRatio = currentEnergy / maxEnergy;
-        
+
         if (energyDepleted || currentEnergy < minActivationEnergy)
         {
             ringColor = ringColorDepleted;
@@ -321,23 +329,30 @@ public class PlayerToolController : MonoBehaviour
         {
             ringColor = Color.Lerp(ringColorLow, ringColorFull, (energyRatio - 0.3f) / 0.7f);
         }
-        
-        // Brighten when active
+
+        // Enhanced active feedback with pulsing
         if (isApplying)
         {
-            ringColor = Color.Lerp(ringColor, Color.white, 0.3f);
-            ringColor.a = Mathf.Min(1f, ringColor.a * 1.3f);
+            float pulse = 1f + Mathf.Sin(Time.time * pulseSpeed) * pulseIntensity;
+            ringColor = Color.Lerp(ringColor, Color.white, 0.4f * pulse);
+            ringColor.a = Mathf.Min(1f, ringColor.a * 1.5f * pulse);
         }
-        
+
         ringLine.startColor = ringColor;
         ringLine.endColor = ringColor;
         
-        // Draw main circle at cursor position
+        // Draw main circle at cursor position with pulse effect when active
+        float radiusMultiplier = 1f;
+        if (isApplying)
+        {
+            radiusMultiplier = 1f + Mathf.Sin(Time.time * pulseSpeed) * pulseIntensity * 0.1f;
+        }
+
         for (int i = 0; i < RING_SEGMENTS; i++)
         {
             float angle = (float)i / RING_SEGMENTS * Mathf.PI * 2f;
-            float x = currentWorldPos.x + Mathf.Cos(angle) * toolRadius;
-            float y = currentWorldPos.y + Mathf.Sin(angle) * toolRadius;
+            float x = currentWorldPos.x + Mathf.Cos(angle) * toolRadius * radiusMultiplier;
+            float y = currentWorldPos.y + Mathf.Sin(angle) * toolRadius * radiusMultiplier;
             ringLine.SetPosition(i, new Vector3(x, y, -1f));
         }
         
@@ -387,7 +402,7 @@ public class PlayerToolController : MonoBehaviour
     {
         if (ringLine != null)
             Destroy(ringLine.gameObject);
-        
+
         if (energyRingLine != null)
             Destroy(energyRingLine.gameObject);
     }
@@ -424,7 +439,7 @@ public class PlayerToolController : MonoBehaviour
             currentStrength = 0f;
         }
 
-        // Hide both ring renderers when disabled
+        // Hide ring renderers when disabled
         if (ringLine != null)
         {
             ringLine.enabled = enabled;

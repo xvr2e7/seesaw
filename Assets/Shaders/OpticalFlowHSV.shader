@@ -166,19 +166,19 @@ Shader "LaminarFlow/OpticalFlowHSV"
             {
                 // Sample velocity texture
                 float4 velData = SAMPLE_TEXTURE2D(_VelocityTex, sampler_VelocityTex, input.uv);
-                
+
                 // Decode velocity from texture (stored as 0-1, convert back to -1 to 1)
                 float2 velocity = (velData.rg - 0.5) * 2.0;
                 float magnitude = velData.b;
                 float hasData = velData.a;
-                
+
                 // Add organic noise
                 float2 noiseUV = input.uv * 30.0 + _Time.y * 0.05;
                 float n = fbm(noiseUV);
-                
+
                 // Convert velocity to color
                 float3 flowColor = VelocityToColor(velocity, magnitude);
-                
+
                 // Add noise variation to hue for organic feel
                 float3 noisyHSV = float3(
                     frac(atan2(velocity.y, velocity.x) / (2.0 * 3.14159265) + 0.5 + _HueOffset + n * _NoiseAmount),
@@ -186,21 +186,21 @@ Shader "LaminarFlow/OpticalFlowHSV"
                     lerp(_ValueRange.x, _ValueRange.y, saturate(magnitude * _VelocityScale * _FlowIntensity))
                 );
                 flowColor = HSVtoRGB(noisyHSV);
-                
+
                 // Apply vibrancy
                 flowColor = pow(max(flowColor, 0.001), 1.0 / _ColorVibrancy);
-                
+
                 // Calculate blend factor - areas with more data/movement show more color
                 float blendFactor = saturate(hasData * (magnitude * _FlowIntensity + _BlendSoftness));
-                
+
                 // Blend with background
                 float3 finalColor = lerp(_BackgroundColor.rgb, flowColor, blendFactor);
-                
+
                 // Subtle vignette for depth
                 float2 centered = input.uv - 0.5;
                 float vignette = 1.0 - dot(centered, centered) * 0.2;
                 finalColor *= vignette;
-                
+
                 return half4(finalColor, 1.0);
             }
             ENDHLSL

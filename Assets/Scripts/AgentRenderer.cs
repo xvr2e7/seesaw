@@ -19,22 +19,32 @@ public class AgentRenderer : MonoBehaviour
     [Tooltip("Base alpha/opacity of agents")]
     [Range(0f, 1f)]
     public float agentOpacity = 0.6f;
-    
+
     [Tooltip("Whether to color agents by their velocity")]
     public bool colorByVelocity = true;
-    
+
     [Tooltip("Hue offset to match flow visualization (degrees)")]
     [Range(0f, 360f)]
     public float hueOffset = 0f;
-    
+
     [Tooltip("Saturation of velocity-based coloring")]
     [Range(0f, 1f)]
     public float saturation = 0.85f;
-    
+
     [Tooltip("Brightness/value of velocity-based coloring")]
     [Range(0f, 1f)]
     public float brightness = 0.95f;
-    
+
+    [Header("Turbulence-Based Coloring")]
+    [Tooltip("Enable gray baseline with colorful turbulence highlighting")]
+    public bool useTurbulenceColoring = true;
+
+    [Tooltip("Base color for normal (non-turbulent) agents")]
+    public Color normalAgentColor = new Color(0.35f, 0.35f, 0.4f, 0.6f);
+
+    [Tooltip("Color for dampened agents")]
+    public Color dampenedAgentColor = new Color(0.5f, 0.7f, 0.9f, 0.7f);
+
     [Header("Fallback Color")]
     public Color fallbackColor = new Color(0.9f, 0.9f, 0.9f, 0.6f);
     
@@ -44,7 +54,6 @@ public class AgentRenderer : MonoBehaviour
     private MaterialPropertyBlock propertyBlock;
     
     // Shader property IDs (cached for performance)
-    private static readonly int ColorProperty = Shader.PropertyToID("_BaseColor");
     private static readonly int ColorsArrayProperty = Shader.PropertyToID("_Colors");
     
     // GPU instancing batch limit
@@ -100,22 +109,25 @@ public class AgentRenderer : MonoBehaviour
     {
         Vector2[] positions = flowSimulation.Positions;
         Vector2[] velocities = flowSimulation.Velocities;
+        float[] turbulenceInfluence = flowSimulation.TurbulenceInfluence;
+        int[] turbulencePattern = flowSimulation.TurbulencePattern;
+        float[] dampeningFactors = flowSimulation.DampeningFactors;
         int count = flowSimulation.AgentCount;
         float maxSpeed = flowSimulation.moveSpeed * 2f;
-        
+
         // Ensure arrays match
         if (matrices == null || matrices.Length != count)
         {
             matrices = new Matrix4x4[count];
             colors = new Vector4[count];
         }
-        
+
         Vector3 scale = Vector3.one * agentSize;
-        
+
         for (int i = 0; i < count; i++)
         {
             Vector3 position = new Vector3(positions[i].x, positions[i].y, renderHeight);
-            
+
             // Rotate agents to face their velocity direction
             Quaternion rotation = Quaternion.identity;
             if (velocities[i].sqrMagnitude > 0.001f)
@@ -123,43 +135,99 @@ public class AgentRenderer : MonoBehaviour
                 float angle = Mathf.Atan2(velocities[i].y, velocities[i].x) * Mathf.Rad2Deg;
                 rotation = Quaternion.Euler(0f, 0f, angle - 90f);
             }
-            
+
             matrices[i] = Matrix4x4.TRS(position, rotation, scale);
-            
-            // Calculate color from velocity
-            if (colorByVelocity)
+
+            // Calculate color
+            Color agentColor;
+            if (colorByVelocity && useTurbulenceColoring)
             {
-                Color velColor = VelocityToColor(velocities[i], maxSpeed);
-                colors[i] = new Vector4(velColor.r, velColor.g, velColor.b, velColor.a);
+                agentColor = GetTurbulenceBasedColor(velocities[i], turbulenceInfluence[i], turbulencePattern[i], dampeningFactors[i], maxSpeed);
+            }
+            else if (colorByVelocity)
+            {
+                agentColor = VelocityToColorClassic(velocities[i], maxSpeed);
             }
             else
             {
-                colors[i] = new Vector4(fallbackColor.r, fallbackColor.g, fallbackColor.b, fallbackColor.a * agentOpacity);
+                agentColor = fallbackColor;
+                agentColor.a *= agentOpacity;
             }
+
+            colors[i] = new Vector4(agentColor.r, agentColor.g, agentColor.b, agentColor.a);
         }
     }
     
     /// <summary>
-    /// Converts velocity to HSV color matching the optical flow visualization
+    /// Turbulence-based coloring: matches flow field visualization
+    /// Gray when organized, pattern-specific color when turbulent
     /// </summary>
-    Color VelocityToColor(Vector2 velocity, float maxSpeed)
+    Color GetTurbulenceBasedColor(Vector2 velocity, float turbulence, int pattern, float dampening, float maxSpeed)
     {
         float magnitude = velocity.magnitude;
-        
-        // Calculate hue from direction (same formula as shader)
+        float speedRatio = Mathf.Clamp01(magnitude / maxSpeed);
+
+        // Base gray color for organized flow
+        float grayValue = Mathf.Lerp(0.3f, 0.65f, speedRatio);
+        Color organizedColor = new Color(grayValue, grayValue, grayValue, agentOpacity);
+
+        // Pattern-specific colors (matching shader)
+        // 1=Circular(green), 2=Scatter(red), 3=Vortex(purple), 4=Wave(cyan), 5=Oscillation(yellow), 6=Cluster(gray)
+        Color patternColor = new Color(0.5f, 0.3f, 0.2f, agentOpacity); // Default
+
+        switch (pattern)
+        {
+            case 1: patternColor = new Color(0.3f, 0.9f, 0.4f, agentOpacity); break; // Circular: Green
+            case 2: patternColor = new Color(1.0f, 0.3f, 0.3f, agentOpacity); break; // Scatter: Red
+            case 3: patternColor = new Color(0.9f, 0.5f, 0.9f, agentOpacity); break; // Vortex: Purple
+            case 4: patternColor = new Color(0.3f, 0.9f, 0.9f, agentOpacity); break; // Wave: Cyan
+            case 5: patternColor = new Color(1.0f, 0.9f, 0.3f, agentOpacity); break; // Oscillation: Yellow
+            case 6: patternColor = new Color(0.7f, 0.7f, 0.7f, agentOpacity); break; // Cluster: Light gray
+        }
+
+        // Modulate by speed
+        patternColor = Color.Lerp(patternColor * 0.5f, patternColor, speedRatio);
+
+        // Dampening shows as brighter gray (smoothing effect)
+        if (dampening > 0.2f)
+        {
+            Color dampenedColor = Color.Lerp(
+                organizedColor,
+                new Color(0.7f, 0.7f, 0.75f, agentOpacity),
+                dampening
+            );
+            return dampenedColor;
+        }
+
+        // Blend between organized (gray) and pattern color (turbulent) based on turbulence
+        float turbulenceThreshold = 0.05f;
+        float turbulenceFactor = Mathf.Clamp01((turbulence - turbulenceThreshold) / (0.5f - turbulenceThreshold));
+        turbulenceFactor = Mathf.Pow(turbulenceFactor, 0.5f);
+
+        return Color.Lerp(organizedColor, patternColor, turbulenceFactor);
+    }
+
+    /// <summary>
+    /// Classic velocity-based coloring (fallback)
+    /// </summary>
+    Color VelocityToColorClassic(Vector2 velocity, float maxSpeed)
+    {
+        float magnitude = velocity.magnitude;
+
+        // Calculate hue from direction
         float angle = Mathf.Atan2(velocity.y, velocity.x);
         float hue = (angle / (2f * Mathf.PI)) + 0.5f;
         hue = (hue + hueOffset / 360f) % 1f;
         if (hue < 0f) hue += 1f;
-        
+
         // Scale saturation and value by speed
         float speedRatio = Mathf.Clamp01(magnitude / maxSpeed);
         float sat = Mathf.Lerp(0.3f, saturation, speedRatio);
         float val = Mathf.Lerp(0.5f, brightness, speedRatio);
-        
+
         Color rgb = HSVToRGB(hue, sat, val);
         rgb.a = agentOpacity;
-        
+
         return rgb;
     }
     
@@ -208,25 +276,23 @@ public class AgentRenderer : MonoBehaviour
     void DrawAgents()
     {
         int count = flowSimulation.AgentCount;
-        
+
         // Draw in batches (GPU instancing limit is 1023 per call)
         for (int batchStart = 0; batchStart < count; batchStart += BATCH_SIZE)
         {
             int batchCount = Mathf.Min(BATCH_SIZE, count - batchStart);
-            
+
             // Create batch arrays
             Matrix4x4[] batchMatrices = new Matrix4x4[batchCount];
+            Vector4[] batchColors = new Vector4[batchCount];
+
             System.Array.Copy(matrices, batchStart, batchMatrices, 0, batchCount);
-            
-            // For per-instance colors, we need to set them individually
-            // Since MaterialPropertyBlock doesn't support per-instance colors easily,
-            // we'll use the average color for the batch (or first color)
-            // For true per-instance colors, we'd need a custom shader with instanced properties
-            
-            // Use the color of the first agent in the batch as representative
-            // (This is a simplification - for true per-instance colors, shader modification needed)
-            propertyBlock.SetColor(ColorProperty, colors[batchStart]);
-            
+            System.Array.Copy(colors, batchStart, batchColors, 0, batchCount);
+
+            // Pass per-instance colors using SetVectorArray
+            // The shader indexes into _Colors array using instanceID
+            propertyBlock.SetVectorArray(ColorsArrayProperty, batchColors);
+
             Graphics.DrawMeshInstanced(
                 agentMesh,
                 0,

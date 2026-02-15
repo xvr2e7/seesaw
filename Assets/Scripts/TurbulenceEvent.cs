@@ -45,8 +45,8 @@ public class TurbulenceEvent
     
     [Header("Intensity")]
     [Tooltip("Base strength of the effect")]
-    [Range(0f, 50f)]
-    public float strength = 25f; // Massively increased default (was 3)
+    [Range(0f, 100f)]
+    public float strength = 50f; // Increased for more extreme disruption
     
     [Tooltip("How quickly the pattern evolves")]
     public float frequency = 2f;
@@ -89,39 +89,39 @@ public class TurbulenceEvent
         switch (pattern)
         {
             case PatternType.Circular:
-                // Orbit around center
-                force = tangent * strength;
+                // Orbit around center - EXTREME
+                force = tangent * strength * 2.0f;
                 break;
 
             case PatternType.Scatter:
-                // Explosive chaos
+                // Explosive chaos - EXTREME
                 float noiseAngle = Mathf.PerlinNoise(agentPos.x * 0.2f + phase, agentPos.y * 0.2f) * Mathf.PI * 4f;
                 Vector2 noiseDir = new Vector2(Mathf.Cos(noiseAngle), Mathf.Sin(noiseAngle));
-                // Strong outward push + noise
-                force = (-dirToCenter * 1.5f + noiseDir * 1.0f).normalized * strength;
+                // Much stronger outward push + noise for panic effect
+                force = (-dirToCenter * 2.5f + noiseDir * 1.5f).normalized * strength * 2.0f;
                 break;
 
             case PatternType.Vortex:
-                // Black hole suction
+                // Black hole suction - EXTREME
                 float spiralStrength = Mathf.Sin(phase) * 0.3f + 0.7f;
-                force = (tangent * 1.5f + dirToCenter * 0.8f * spiralStrength) * strength;
+                force = (tangent * 2.0f + dirToCenter * 1.2f * spiralStrength) * strength * 1.8f;
                 break;
 
             case PatternType.Wave:
-                // Sinusoidal wave in specified direction
+                // Sinusoidal wave - EXTREME
                 float wavePhase = Vector2.Dot(agentPos, direction.normalized) * 0.3f + phase;
                 float waveForce = Mathf.Sin(wavePhase);
-                force = direction.normalized * waveForce * strength;
+                force = direction.normalized * waveForce * strength * 2.5f;
                 break;
 
             case PatternType.Oscillation:
-                // Violent shaking
-                force = Random.insideUnitCircle * strength;
+                // Violent shaking - EXTREME
+                force = Random.insideUnitCircle * strength * 2.2f;
                 break;
 
             case PatternType.Cluster:
-                // Implosion
-                force = dirToCenter * strength * 0.8f;
+                // Implosion - EXTREME
+                force = dirToCenter * strength * 1.5f;
                 break;
         }
         
@@ -143,9 +143,9 @@ public class TurbulenceEvent
         
         float normalizedDist = (dist - innerRadius) / (radius - innerRadius);
         float falloff = 1f - normalizedDist;
-        
-        // Stronger dampening for clusters
-        return falloff * currentIntensity * 0.95f; 
+
+        // EXTREME dampening for clusters (agents almost stop)
+        return falloff * currentIntensity * 0.99f; 
     }
     
     /// <summary>

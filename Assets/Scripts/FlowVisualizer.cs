@@ -217,7 +217,7 @@ public class FlowVisualizer : MonoBehaviour
         // Clear accumulators
         System.Array.Clear(velocityAccumulator, 0, velocityAccumulator.Length);
         System.Array.Clear(weightAccumulator, 0, weightAccumulator.Length);
-        
+
         Vector2[] positions = flowSimulation.Positions;
         Vector2[] velocities = flowSimulation.Velocities;
         int agentCount = flowSimulation.AgentCount;
@@ -268,7 +268,7 @@ public class FlowVisualizer : MonoBehaviour
             velocityAccumulator[idx10] += vel * w10;
             velocityAccumulator[idx01] += vel * w01;
             velocityAccumulator[idx11] += vel * w11;
-            
+
             weightAccumulator[idx00] += w00;
             weightAccumulator[idx10] += w10;
             weightAccumulator[idx01] += w01;
@@ -289,17 +289,17 @@ public class FlowVisualizer : MonoBehaviour
             {
                 target = velocityAccumulator[i] / weightAccumulator[i];
             }
-            
+
             // Decode previous value (-1 to 1 range approx)
             Vector2 current = new Vector2(
                 (velocityPixels[i].r - 0.5f) * 2f,
                 (velocityPixels[i].g - 0.5f) * 2f
             ) * baseSpeed;
-            
+
             // Temporal smoothing
             Vector2 blended = Vector2.Lerp(current, target, smoothFactor);
             float mag = blended.magnitude;
-            
+
             // Encode (0-1 range)
             velocityPixels[i] = new Color(
                 Mathf.Clamp01((blended.x / baseSpeed) * 0.5f + 0.5f),

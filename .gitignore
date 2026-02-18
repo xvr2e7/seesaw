@@ -77,8 +77,9 @@ crashlytics-build.properties
 # ETC
 .DS_Store
 
-# Large packages
+# Copyright packages
 [Aa]ssets/FronkonGames/*
 [Aa]ssets/Audio/*
 [Aa]ssets/StreamingAssets/*
+[Aa]ssets/Font/*
 FronkonGames.meta.

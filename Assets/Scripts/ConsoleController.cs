@@ -1,599 +1,1106 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
-using UnityEngine.Rendering.Universal;
 using System.Collections;
+using TMPro;
 
 /// <summary>
-/// Surveillance console interface - the entry point to Laminar Flow.
-/// Displays a 2x2 grid of camera feeds:
-/// - One active feed showing a preview of Laminar Flow (clickable)
-/// - Three feeds showing static/noise (inactive)
-/// 
-/// Handles scene transitions and return from documentary phase.
+/// Game opening menu — Laminar Flow.
+///
+/// Main screen with: Start, Controls, Settings, Artist Statement, Credits, Quit.
+/// Version shown in corner. Background: slow-drifting particles on very dark field.
+/// Audio: underwater.wav looped as ambient.
+/// Procedural cursor drawn via UI canvas element.
 /// </summary>
 public class ConsoleController : MonoBehaviour
 {
-    [Header("Layout")]
-    [Tooltip("Margin from screen edges")]
-    public float margin = 40f;
-    
-    [Tooltip("Gap between camera feeds")]
-    public float gap = 16f;
-    
-    [Tooltip("Aspect ratio for each camera panel (1.778 = 16:9)")]
-    public float panelAspectRatio = 1.778f;
-    
-    [Header("Active Feed (Feed 0)")]
-    [Tooltip("Which feed slot is active (0-3, top-left to bottom-right)")]
-    public int activeFeedIndex = 0;
-    
-    [Tooltip("Preview texture/render texture for the active feed")]
-    public Texture2D previewTexture;
-    
-    [Tooltip("Color tint when not hovered (dimmed)")]
-    public Color dimmedColor = new Color(0.4f, 0.4f, 0.4f, 1f);
-    
-    [Tooltip("Color tint when hovered (brightened)")]
-    public Color hoveredColor = new Color(1f, 1f, 1f, 1f);
-    
-    [Tooltip("Hover transition speed")]
-    public float hoverTransitionSpeed = 5f;
-    
-    [Header("Static Noise")]
-    [Tooltip("Speed of static animation")]
-    public float staticSpeed = 15f;
-    
-    [Tooltip("Base color for static (greenish CRT feel)")]
-    public Color staticBaseColor = new Color(0.1f, 0.12f, 0.1f, 1f);
-    
-    [Tooltip("Bright color for static noise")]
-    public Color staticNoiseColor = new Color(0.2f, 0.25f, 0.2f, 1f);
-    
-    [Header("Console Frame")]
-    [Tooltip("Background color of the console")]
-    public Color consoleBackgroundColor = new Color(0.02f, 0.02f, 0.02f, 1f);
-    
-    [Tooltip("Frame/bezel color around feeds")]
-    public Color frameColor = new Color(0.08f, 0.08f, 0.08f, 1f);
-    
-    [Tooltip("Frame thickness")]
-    public float frameThickness = 4f;
-    
-    [Header("Transition")]
-    [Tooltip("Fade duration when entering Laminar Flow")]
-    public float fadeOutDuration = 1.5f;
-    
-    [Tooltip("Fade duration when returning from documentary")]
-    public float fadeInDuration = 2f;
-    
+    // ─── Inspector ────────────────────────────────────────────────────────────
+
     [Header("Scene")]
-    [Tooltip("Name of the Laminar Flow scene to load")]
     public string laminarFlowSceneName = "Laminar Flow";
-    
+    public string versionString = "v1.4.6";
+
+    [Header("Audio")]
+    public AudioClip backgroundMusic;
+    [Range(0f, 1f)]
+    public float musicVolume = 0.35f;
+
+    [Header("Transition")]
+    public float fadeInDuration  = 2f;
+    public float fadeOutDuration = 1.5f;
+
+    [Header("Custom Font")]
+    public TMP_FontAsset customFont;
+
     [Header("Debug")]
     public bool showDebugInfo = false;
-    
-    // UI Elements
-    private Canvas canvas;
-    private RawImage[] feedPanels = new RawImage[4];
-    private Image[] feedFrames = new Image[4];
-    private Image fadeOverlay;
-    private Texture2D[] staticTextures = new Texture2D[4];
-    
-    // State
-    private int hoveredFeed = -1;
-    private float[] feedBrightness = new float[4];
-    private bool isTransitioning = false;
-    private bool isReturning = false;
-    private bool isBooting = true;
-    
-    // Preview generator
-    private PreviewTextureGenerator previewGenerator;
-    
-    // Singleton for cross-scene communication
-    private static ConsoleController instance;
-    public static ConsoleController Instance => instance;
-    
-    // Flag to indicate we're returning from documentary
-    private static bool returningFromDocumentary = false;
-    
-    public static void SetReturningFromDocumentary()
+
+    // ─── Content ──────────────────────────────────────────────────────────────
+
+    // Artist Statement
+    private const string ARTIST_STATEMENT =
+        "Work in progress.\n\n" +
+        "Laminar flow is the condition in which fluid moves in smooth, parallel layers " +
+        "without disruption between them. This work takes that image as a lens: " +
+        "the suppression of collective movement as the management of flow.\n\n" +
+        "The simulation you inhabit places you in the role of an operator whose task " +
+        "is convergence — the drawing of dispersed motion into coherence. " +
+        "What counts as order? What makes a gathering legible as threat?\n\n" +
+        "See/Saw offers no answer. It holds the question open.";
+
+    private const string CONTROLS_TEXT =
+        "MOUSE         move / aim\n" +
+        "LEFT CLICK    interact / select\n" +
+        "ESC           pause / quit\n\n" +
+        "Within the simulation:\n" +
+        "MOUSE         direct the convergence field\n" +
+        "SCROLL        adjust field radius\n" +
+        "HOLD LMB      amplify influence";
+
+    private const string CREDITS_TEXT =
+        "Concept & Design\n" +
+        "    — Ziyan Xie\n\n" +
+        "Sound\n" +
+        "    Fabrice Choudry\n\n" +
+        "Special Thanks\n" +   
+        "    Steve Anderson";
+
+    // ─── Runtime state ────────────────────────────────────────────────────────
+
+    private enum MenuScreen { Main, Controls, Settings, ArtistStatement, Credits }
+    private MenuScreen currentScreen = MenuScreen.Main;
+
+    private Canvas          canvas;
+    private Image           fadeOverlay;
+    private GameObject      mainScreenObj;
+    private GameObject      subScreenObj;
+    private TextMeshProUGUI subScreenTitle;
+    private TextMeshProUGUI subScreenBody;
+
+    // Menu items (Main screen)
+    private string[]          menuLabels  = { "START", "CONTROLS", "SETTINGS", "ARTIST STATEMENT", "CREDITS", "QUIT" };
+    private TextMeshProUGUI[] menuTexts;
+    private int               hoveredItem = -1;
+    private float[]           itemBrightness;
+
+    // Settings
+    private float masterVolume = 1f;
+    private Image  volumeBarFill;
+    private bool   isDraggingVolume = false;
+    private RectTransform volumeTrackRect;
+
+    // Particles
+    private struct Particle
     {
-        returningFromDocumentary = true;
+        public Vector2 pos;   // 0-1 normalized
+        public Vector2 vel;   // slow drift
+        public float   alpha;
+        public float   size;
+        public float   phase; // for opacity breathing
     }
-    
+    private const int PARTICLE_COUNT = 70;
+    private Particle[]  particles;
+    private Image[]     particleImages;
+
+    // Sun core — drifts subtly toward cursor
+    private RectTransform sunCoreRect;
+    private Vector2       sunCoreBase = new Vector2(0f, 20f);
+    private Vector2       sunCoreSmoothed;
+
+    // Procedural cursor
+    private RectTransform cursorRect;
+    private Image         cursorRingImage;
+    private Image         cursorDotImage;
+    private float         cursorScale = 1f;
+    private float         cursorTargetScale = 1f;
+
+    // Audio
+    private AudioSource bgAudioSource;
+
+    // Sub-screen transition
+    private bool isTransitioning   = false;
+    private bool isSubTransitioning = false;
+
+    // Singleton / cross-scene
+    private static ConsoleController instance;
+    public  static ConsoleController Instance => instance;
+    private static bool returningFromDocumentary = false;
+    public  static void SetReturningFromDocumentary() => returningFromDocumentary = true;
+
+    // Font (resolved in Start)
+    private TMP_FontAsset resolvedFont;
+
+    // ─── Lifecycle ────────────────────────────────────────────────────────────
+
     void Awake()
     {
-        // Don't use singleton pattern anymore - allow fresh instances
         instance = this;
+        masterVolume = PlayerPrefs.GetFloat("MasterVolume", 1f);
     }
-    
+
     void Start()
     {
-        CreateStaticTextures();
-        CreatePreviewIfNeeded();
+        ResolveFont();
+        SetupAudio();
         CreateUI();
-        
-        // Initialize brightness
-        for (int i = 0; i < 4; i++)
-        {
-            feedBrightness[i] = (i == activeFeedIndex) ? 0f : 0f;
-        }
-        
-        // Check if returning from documentary
+
+        Cursor.visible = false;
+
         if (returningFromDocumentary)
         {
             returningFromDocumentary = false;
-            isBooting = false;
-            isReturning = true;
-            StartCoroutine(FadeIn());
+            StartCoroutine(FadeIn(fadeInDuration));
         }
         else
         {
-            // Normal boot sequence
-            StartCoroutine(BootSequence());
+            StartCoroutine(IntroSequence());
         }
     }
-    
-    void CreateStaticTextures()
-    {
-        // Create static noise textures for inactive feeds (CPU-based, no GL commands)
-        for (int i = 0; i < 4; i++)
-        {
-            if (i != activeFeedIndex)
-            {
-                staticTextures[i] = new Texture2D(128, 72, TextureFormat.RGB24, false);
-                staticTextures[i].filterMode = FilterMode.Point;
-                staticTextures[i].wrapMode = TextureWrapMode.Clamp;
-                staticTextures[i].name = $"StaticNoise_{i}";
-                UpdateStaticTexture(i);
-            }
-        }
-    }
-    
-    void CreatePreviewIfNeeded()
-    {
-        // Check if we have a preview texture
-        if (previewTexture == null)
-        {
-            // Create preview generator
-            GameObject genObj = new GameObject("PreviewGenerator");
-            genObj.transform.SetParent(transform);
-            previewGenerator = genObj.AddComponent<PreviewTextureGenerator>();
-        }
-    }
-    
-    void CreateUI()
-    {
-        // Create canvas
-        GameObject canvasObj = new GameObject("ConsoleCanvas");
-        canvasObj.transform.SetParent(transform);
-        canvas = canvasObj.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 50;
-        
-        CanvasScaler scaler = canvasObj.AddComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920, 1080);
-        scaler.matchWidthOrHeight = 0.5f; // Balance between width and height matching
-        
-        canvasObj.AddComponent<GraphicRaycaster>();
-        
-        // Background
-        GameObject bgObj = new GameObject("Background");
-        bgObj.transform.SetParent(canvas.transform);
-        Image bg = bgObj.AddComponent<Image>();
-        bg.color = consoleBackgroundColor;
-        bg.raycastTarget = false;
-        RectTransform bgRect = bgObj.GetComponent<RectTransform>();
-        bgRect.anchorMin = Vector2.zero;
-        bgRect.anchorMax = Vector2.one;
-        bgRect.offsetMin = Vector2.zero;
-        bgRect.offsetMax = Vector2.zero;
-        
-        // Create feed panels (2x2 grid)
-        for (int i = 0; i < 4; i++)
-        {
-            CreateFeedPanel(i);
-        }
-        
-        // Fade overlay (on top)
-        GameObject fadeObj = new GameObject("FadeOverlay");
-        fadeObj.transform.SetParent(canvas.transform);
-        fadeOverlay = fadeObj.AddComponent<Image>();
-        fadeOverlay.color = new Color(0, 0, 0, 0);
-        fadeOverlay.raycastTarget = false;
-        RectTransform fadeRect = fadeObj.GetComponent<RectTransform>();
-        fadeRect.anchorMin = Vector2.zero;
-        fadeRect.anchorMax = Vector2.one;
-        fadeRect.offsetMin = Vector2.zero;
-        fadeRect.offsetMax = Vector2.zero;
-        
-        // Force initial layout update
-        Canvas.ForceUpdateCanvases();
-        UpdateLayout();
-    }
-    
-    void CreateFeedPanel(int index)
-    {
-        // Frame container
-        GameObject frameObj = new GameObject($"FeedFrame_{index}");
-        frameObj.transform.SetParent(canvas.transform);
-        feedFrames[index] = frameObj.AddComponent<Image>();
-        feedFrames[index].color = frameColor;
-        feedFrames[index].raycastTarget = false;
-        
-        // Feed panel (the actual image)
-        GameObject panelObj = new GameObject($"FeedPanel_{index}");
-        panelObj.transform.SetParent(frameObj.transform);
-        feedPanels[index] = panelObj.AddComponent<RawImage>();
-        feedPanels[index].raycastTarget = (index == activeFeedIndex);
-        
-        // Set initial texture
-        if (index == activeFeedIndex)
-        {
-            // Will be set later once preview is ready
-            feedPanels[index].color = dimmedColor;
-        }
-        else
-        {
-            feedPanels[index].texture = staticTextures[index];
-            feedPanels[index].color = Color.white;
-        }
-    }
-    
+
     void Update()
     {
-        // Check for Escape key to quit the game
         if (Input.GetKeyDown(KeyCode.Escape))
         {
-            QuitGame();
+            if (currentScreen != MenuScreen.Main)
+                ShowScreen(MenuScreen.Main);
+            else
+                QuitGame();
             return;
         }
 
-        if (isTransitioning || isBooting) return;
+        UpdateParticles();
+        UpdateSunCore();
+        UpdateCursor();
 
-        // Ensure preview texture is assigned
-        if (feedPanels[activeFeedIndex] != null && feedPanels[activeFeedIndex].texture == null)
+        if (!isTransitioning && !isSubTransitioning)
         {
-            if (previewGenerator != null && previewGenerator.generatedTexture != null)
+            if (currentScreen == MenuScreen.Main)
             {
-                feedPanels[activeFeedIndex].texture = previewGenerator.generatedTexture;
+                UpdateMenuHover();
+                UpdateMenuClick();
+                UpdateVolumeSlider();
             }
-            else if (previewTexture != null)
+            else
             {
-                feedPanels[activeFeedIndex].texture = previewTexture;
+                UpdateVolumeSlider();
             }
         }
 
-        UpdateLayout();
-        UpdateStaticNoise();
-        UpdateHoverDetection();
-        UpdateFeedBrightness();
-        UpdateClickDetection();
+        ApplyVolumeToAudio();
     }
+
+    void OnDestroy()
+    {
+        Cursor.visible = true;
+        if (sunGlowTexture != null) Destroy(sunGlowTexture);
+    }
+
+    // ─── Font ─────────────────────────────────────────────────────────────────
+
+    void ResolveFont()
+    {
+        if (customFont != null)
+        {
+            resolvedFont = customFont;
+            return;
+        }
+        // Use TMP's bundled LiberationSans SDF (always present after TMP import)
+        resolvedFont = Resources.Load<TMP_FontAsset>("Fonts & Materials/LiberationSans SDF");
+    }
+
+    // ─── Audio ────────────────────────────────────────────────────────────────
+
+    void SetupAudio()
+    {
+        bgAudioSource = gameObject.AddComponent<AudioSource>();
+        bgAudioSource.clip        = backgroundMusic;
+        bgAudioSource.loop        = true;
+        bgAudioSource.volume      = 0f; // fades in
+        bgAudioSource.spatialBlend = 0f;
+        bgAudioSource.playOnAwake = false;
+        if (backgroundMusic != null) bgAudioSource.Play();
+    }
+
+    void ApplyVolumeToAudio()
+    {
+        if (bgAudioSource != null)
+            bgAudioSource.volume = Mathf.MoveTowards(bgAudioSource.volume, masterVolume * musicVolume, Time.deltaTime * 0.5f);
+    }
+
+    // ─── UI Construction ──────────────────────────────────────────────────────
+
+    void CreateUI()
+    {
+        // Root canvas
+        var canvasGO = new GameObject("MenuCanvas");
+        canvasGO.transform.SetParent(transform);
+        canvas = canvasGO.AddComponent<Canvas>();
+        canvas.renderMode   = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 50;
+
+        var scaler = canvasGO.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode       = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920, 1080);
+        scaler.matchWidthOrHeight  = 0.5f;
+
+        canvasGO.AddComponent<GraphicRaycaster>();
+
+        // Background
+        CreateBackground(canvasGO.transform);
+
+        // Particles
+        CreateParticles(canvasGO.transform);
+
+        // Main menu screen
+        mainScreenObj = CreateMainScreen(canvasGO.transform);
+
+        // Sub screen (hidden initially)
+        subScreenObj = CreateSubScreen(canvasGO.transform);
+        subScreenObj.SetActive(false);
+
+        // Procedural cursor (topmost)
+        CreateCursor(canvasGO.transform);
+
+        // Fade overlay (above everything except cursor)
+        fadeOverlay = CreateFullscreenImage(canvasGO.transform, "FadeOverlay", Color.black);
+        fadeOverlay.raycastTarget = false;
+
+        // Move cursor to top of hierarchy
+        cursorRect.parent.SetAsLastSibling();
+
+        Canvas.ForceUpdateCanvases();
+    }
+
+    // Radial glow texture — generated once at startup
+    private Texture2D sunGlowTexture;
+
+    void CreateBackground(Transform parent)
+    {
+        // Base dark fill
+        var bg = CreateFullscreenImage(parent, "Background", new Color(0.015f, 0.015f, 0.018f, 1f));
+        bg.raycastTarget = false;
+
+        // Bake once at startup — zero per-frame cost
+        sunGlowTexture = CreateSunTexture(256, 256);
+
+        // Wide halo — large, very faint, smooth fade into background
+        AddSunLayer(parent, "SunHalo", new Vector2(0f, 20f), new Vector2(1100f, 1100f), new Color(0.40f, 0.24f, 0.09f, 0.09f));
+
+        // Core — tracks cursor
+        sunCoreSmoothed = sunCoreBase;
+        sunCoreRect = AddSunLayer(parent, "SunCore", sunCoreBase, new Vector2(380f, 380f), new Color(0.68f, 0.46f, 0.22f, 0.50f));
+    }
+
+    RectTransform AddSunLayer(Transform parent, string name, Vector2 pos, Vector2 size, Color tint)
+    {
+        var go   = new GameObject(name);
+        go.transform.SetParent(parent, false);
+        var img  = go.AddComponent<RawImage>();
+        img.texture       = sunGlowTexture;
+        img.raycastTarget = false;
+
+        // Additive blending: contributes (tint * texture) to whatever is beneath.
+        // At zero texture value the contribution is exactly zero — no edge artifact.
+        var mat = new Material(Shader.Find("UI/Default"));
+        mat.SetInt("_SrcBlend",  (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        mat.SetInt("_DstBlend",  (int)UnityEngine.Rendering.BlendMode.One);
+        mat.SetInt("_ZWrite",    0);
+        img.material = mat;
+        img.color    = tint;
+
+        var rect = go.GetComponent<RectTransform>();
+        rect.anchorMin        = new Vector2(0.5f, 0.5f);
+        rect.anchorMax        = new Vector2(0.5f, 0.5f);
+        rect.pivot            = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = pos;
+        rect.sizeDelta        = size;
+        return rect;
+    }
+
+    // Single smooth radial falloff baked once.
+    // Three layers in CreateBackground do the heavy lifting visually.
+    Texture2D CreateSunTexture(int w, int h)
+    {
+        var tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
+        tex.filterMode = FilterMode.Bilinear;
+        tex.wrapMode   = TextureWrapMode.Clamp;
+        var pixels = new Color[w * h];
+
+        float invW = 1f / (w - 1);
+        float invH = 1f / (h - 1);
+
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                float u = x * invW * 2f - 1f;
+                float v = y * invH * 2f - 1f;
+                float d = Mathf.Sqrt(u * u + v * v);
+
+                // Gentle gaussian — fades smoothly to zero exactly at the texture edge.
+                // A single layer with this texture has no visible boundary.
+                float g = Mathf.Exp(-d * d * 1.2f);
+                g = Mathf.Pow(g, 1.8f);
+
+                pixels[y * w + x] = new Color(g, g, g, g);
+            }
+        }
+
+        tex.SetPixels(pixels);
+        tex.Apply();
+        return tex;
+    }
+
+    Image CreateFullscreenImage(Transform parent, string name, Color color)
+    {
+        var go   = new GameObject(name);
+        go.transform.SetParent(parent, false);
+        var img  = go.AddComponent<Image>();
+        img.color = color;
+        var rect = go.GetComponent<RectTransform>();
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+        return img;
+    }
+
+    // ─── Particles ────────────────────────────────────────────────────────────
+
+    void CreateParticles(Transform parent)
+    {
+        particles      = new Particle[PARTICLE_COUNT];
+        particleImages = new Image[PARTICLE_COUNT];
+
+        var container = new GameObject("Particles");
+        container.transform.SetParent(parent, false);
+        var cRect = container.AddComponent<RectTransform>();
+        cRect.anchorMin = Vector2.zero;
+        cRect.anchorMax = Vector2.one;
+        cRect.offsetMin = Vector2.zero;
+        cRect.offsetMax = Vector2.zero;
+
+        // Add CanvasGroup so we can fade the whole layer
+        container.AddComponent<CanvasGroup>().blocksRaycasts = false;
+
+        for (int i = 0; i < PARTICLE_COUNT; i++)
+        {
+            particles[i] = RandomParticle();
+
+            var go   = new GameObject($"P{i}");
+            go.transform.SetParent(container.transform, false);
+            var img  = go.AddComponent<Image>();
+            img.raycastTarget = false;
+
+            // Tiny circle texture via a 1x1 white pixel (UI Image with aspect-fit looks like a dot)
+            img.color = new Color(0.7f, 0.75f, 0.8f, 0f);
+            var r = go.GetComponent<RectTransform>();
+            r.anchorMin = new Vector2(0.5f, 0.5f);
+            r.anchorMax = new Vector2(0.5f, 0.5f);
+            r.pivot     = new Vector2(0.5f, 0.5f);
+            float sz    = particles[i].size;
+            r.sizeDelta = new Vector2(sz, sz);
+
+            particleImages[i] = img;
+        }
+    }
+
+    Particle RandomParticle()
+    {
+        // Bias spawn toward center so dust clouds around the sun
+        float angle  = Random.value * Mathf.PI * 2f;
+        float radius = Mathf.Pow(Random.value, 0.5f) * 0.42f; // 0..0.42 from center
+        Vector2 pos  = new Vector2(0.5f + Mathf.Cos(angle) * radius,
+                                   0.5f + Mathf.Sin(angle) * radius);
+
+        // Mostly random walk with only a faint outward tendency
+        float   speed   = Random.Range(0.0004f, 0.002f);
+        float   randAngle = Random.value * Mathf.PI * 2f;
+        Vector2 outward = (pos - new Vector2(0.5f, 0.5f)).normalized;
+        Vector2 random  = new Vector2(Mathf.Cos(randAngle), Mathf.Sin(randAngle));
+        // 25% outward bias, 75% pure random direction
+        Vector2 vel     = Vector2.Lerp(random, outward, 0.25f).normalized * speed;
+
+        return new Particle
+        {
+            pos   = pos,
+            vel   = vel,
+            alpha = Random.Range(0.04f, 0.22f),
+            size  = Random.Range(1.2f, 3.5f),
+            phase = Random.value * Mathf.PI * 2f
+        };
+    }
+
+    // Warm dust color near sun core
+    private static readonly Color DustWarm = new Color(0.82f, 0.68f, 0.42f, 1f);
+    // Cool mote color at outer edge
+    private static readonly Color DustCool = new Color(0.55f, 0.58f, 0.65f, 1f);
+
+    void UpdateSunCore()
+    {
+        if (sunCoreRect == null) return;
+
+        // Map mouse to canvas-space offset from center, then scale way down
+        RectTransform canvasRect = canvas.GetComponent<RectTransform>();
+        float cw = canvasRect.rect.width;
+        float ch = canvasRect.rect.height;
+
+        // Normalised mouse: -0.5..0.5 from screen center
+        float mx = (Input.mousePosition.x / Screen.width)  - 0.5f;
+        float my = (Input.mousePosition.y / Screen.height) - 0.5f;
+
+        // Drift range and tracking speed
+        const float maxDrift = 36f;
+        Vector2 target = sunCoreBase + new Vector2(mx, my) * maxDrift * 2f;
+
+        // Responsive but still smooth — not instant
+        sunCoreSmoothed = Vector2.Lerp(sunCoreSmoothed, target, Time.deltaTime * 3.5f);
+        sunCoreRect.anchoredPosition = sunCoreSmoothed;
+    }
+
+    void UpdateParticles()
+    {
+        RectTransform canvasRect = canvas.GetComponent<RectTransform>();
+        float cw = canvasRect.rect.width;
+        float ch = canvasRect.rect.height;
+        float t  = Time.time;
+
+        for (int i = 0; i < PARTICLE_COUNT; i++)
+        {
+            ref Particle p = ref particles[i];
+
+            p.pos += p.vel * Time.deltaTime * 60f;
+
+            // Respawn at center when drifted too far out
+            float distFromCenter = Vector2.Distance(p.pos, new Vector2(0.5f, 0.5f));
+            if (distFromCenter > 0.62f)
+            {
+                p = RandomParticle();
+            }
+
+            // Distance-based color: warm at center, cool further out
+            float warmT  = Mathf.Clamp01(1f - distFromCenter / 0.45f);
+            Color tint   = Color.Lerp(DustCool, DustWarm, warmT);
+
+            // Breathing alpha — slower near core (heavier dust)
+            float breatheSpeed = Mathf.Lerp(0.25f, 0.55f, 1f - warmT);
+            float breathe      = Mathf.Sin(t * breatheSpeed + p.phase) * 0.5f + 0.5f;
+            float alpha        = p.alpha * (0.4f + 0.6f * breathe);
+            // Particles very close to center are nearly invisible (occluded by glow)
+            float coreFade     = Mathf.Clamp01((distFromCenter - 0.04f) / 0.08f);
+            alpha *= coreFade;
+
+            var img = particleImages[i];
+            img.color = new Color(tint.r, tint.g, tint.b, alpha);
+
+            var rect = img.GetComponent<RectTransform>();
+            rect.anchoredPosition = new Vector2(p.pos.x * cw - cw * 0.5f, p.pos.y * ch - ch * 0.5f);
+        }
+    }
+
+    // ─── Main Screen ──────────────────────────────────────────────────────────
+
+    GameObject CreateMainScreen(Transform parent)
+    {
+        var go = new GameObject("MainScreen");
+        go.transform.SetParent(parent, false);
+        var rect = go.AddComponent<RectTransform>();
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+
+        // Title
+        var titleGO = new GameObject("Title");
+        titleGO.transform.SetParent(go.transform, false);
+        var titleTMP = titleGO.AddComponent<TextMeshProUGUI>();
+        titleTMP.text      = "See/Saw";
+        titleTMP.font      = resolvedFont;
+        titleTMP.fontSize  = 60f;
+        titleTMP.fontStyle = FontStyles.Normal;
+        titleTMP.color     = new Color(0.88f, 0.88f, 0.88f, 1f);
+        titleTMP.characterSpacing = 18f;
+        titleTMP.alignment = TextAlignmentOptions.Left;
+        titleTMP.raycastTarget = false;
+        var titleRect = titleGO.GetComponent<RectTransform>();
+        titleRect.anchorMin        = new Vector2(0f, 0f);
+        titleRect.anchorMax        = new Vector2(1f, 1f);
+        titleRect.pivot            = new Vector2(0f, 1f);
+        titleRect.anchoredPosition = new Vector2(160f, -120f);
+        titleRect.sizeDelta        = new Vector2(-200f, 80f);
+
+        // Subtitle / tagline
+        var subGO   = new GameObject("Subtitle");
+        subGO.transform.SetParent(go.transform, false);
+        var subTMP  = subGO.AddComponent<TextMeshProUGUI>();
+        subTMP.text     = "simulating machine vision";
+        subTMP.font     = resolvedFont;
+        subTMP.fontSize = 16f;
+        subTMP.color    = new Color(0.45f, 0.47f, 0.5f, 1f);
+        subTMP.characterSpacing = 4f;
+        subTMP.alignment = TextAlignmentOptions.Left;
+        subTMP.raycastTarget = false;
+        var subRect = subGO.GetComponent<RectTransform>();
+        subRect.anchorMin        = new Vector2(0f, 0f);
+        subRect.anchorMax        = new Vector2(1f, 1f);
+        subRect.pivot            = new Vector2(0f, 1f);
+        subRect.anchoredPosition = new Vector2(163f, -196f);
+        subRect.sizeDelta        = new Vector2(-200f, 30f);
+
+        // Divider line
+        CreateDivider(go.transform, new Vector2(160f, -224f), 280f);
+
+        // Menu items
+        menuTexts      = new TextMeshProUGUI[menuLabels.Length];
+        itemBrightness = new float[menuLabels.Length];
+
+        for (int i = 0; i < menuLabels.Length; i++)
+        {
+            float yOffset = -284f - i * 52f;
+            menuTexts[i] = CreateMenuItem(go.transform, menuLabels[i], new Vector2(160f, yOffset), i);
+        }
+
+        // Version label (bottom-left)
+        var verGO  = new GameObject("Version");
+        verGO.transform.SetParent(go.transform, false);
+        var verTMP = verGO.AddComponent<TextMeshProUGUI>();
+        verTMP.text      = versionString;
+        verTMP.font      = resolvedFont;
+        verTMP.fontSize  = 13f;
+        verTMP.color     = new Color(0.3f, 0.32f, 0.35f, 1f);
+        verTMP.alignment = TextAlignmentOptions.Left;
+        verTMP.raycastTarget = false;
+        var verRect = verGO.GetComponent<RectTransform>();
+        verRect.anchorMin        = new Vector2(0f, 0f);
+        verRect.anchorMax        = new Vector2(0f, 0f);
+        verRect.pivot            = new Vector2(0f, 0f);
+        verRect.anchoredPosition = new Vector2(30f, 22f);
+        verRect.sizeDelta        = new Vector2(200f, 24f);
+
+        return go;
+    }
+
+    void CreateDivider(Transform parent, Vector2 anchoredPos, float width)
+    {
+        var go   = new GameObject("Divider");
+        go.transform.SetParent(parent, false);
+        var img  = go.AddComponent<Image>();
+        img.color = new Color(0.22f, 0.24f, 0.27f, 1f);
+        img.raycastTarget = false;
+        var rect = go.GetComponent<RectTransform>();
+        rect.anchorMin        = new Vector2(0f, 1f);
+        rect.anchorMax        = new Vector2(0f, 1f);
+        rect.pivot            = new Vector2(0f, 0.5f);
+        rect.anchoredPosition = anchoredPos;
+        rect.sizeDelta        = new Vector2(width, 1f);
+    }
+
+    TextMeshProUGUI CreateMenuItem(Transform parent, string label, Vector2 anchoredPos, int index)
+    {
+        var go   = new GameObject($"MenuItem_{index}");
+        go.transform.SetParent(parent, false);
+        var tmp  = go.AddComponent<TextMeshProUGUI>();
+        tmp.text     = label;
+        tmp.font     = resolvedFont;
+        tmp.fontSize = 18f;
+        tmp.color    = new Color(0.45f, 0.47f, 0.5f, 1f);
+        tmp.characterSpacing = 3f;
+        tmp.alignment = TextAlignmentOptions.Left;
+        tmp.raycastTarget = true;
+        var rect = go.GetComponent<RectTransform>();
+        rect.anchorMin        = new Vector2(0f, 1f);
+        rect.anchorMax        = new Vector2(0.5f, 1f);
+        rect.pivot            = new Vector2(0f, 0.5f);
+        rect.anchoredPosition = anchoredPos;
+        rect.sizeDelta        = new Vector2(0f, 40f);
+        return tmp;
+    }
+
+    // ─── Sub Screen ───────────────────────────────────────────────────────────
+
+    GameObject CreateSubScreen(Transform parent)
+    {
+        var go = new GameObject("SubScreen");
+        go.transform.SetParent(parent, false);
+        var rect = go.AddComponent<RectTransform>();
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+
+        var cg = go.AddComponent<CanvasGroup>();
+        cg.alpha = 0f;
+
+        // Back hint
+        var backGO  = new GameObject("BackHint");
+        backGO.transform.SetParent(go.transform, false);
+        var backTMP = backGO.AddComponent<TextMeshProUGUI>();
+        backTMP.text      = "[ ESC ] BACK";
+        backTMP.font      = resolvedFont;
+        backTMP.fontSize  = 11f;
+        backTMP.color     = new Color(0.3f, 0.32f, 0.35f, 1f);
+        backTMP.characterSpacing = 2f;
+        backTMP.alignment = TextAlignmentOptions.Left;
+        backTMP.raycastTarget = false;
+        var backRect = backGO.GetComponent<RectTransform>();
+        backRect.anchorMin        = new Vector2(0f, 0f);
+        backRect.anchorMax        = new Vector2(0f, 0f);
+        backRect.pivot            = new Vector2(0f, 0f);
+        backRect.anchoredPosition = new Vector2(30f, 22f);
+        backRect.sizeDelta        = new Vector2(200f, 24f);
+
+        // Title
+        var titleGO  = new GameObject("SubTitle");
+        titleGO.transform.SetParent(go.transform, false);
+        subScreenTitle = titleGO.AddComponent<TextMeshProUGUI>();
+        subScreenTitle.font      = resolvedFont;
+        subScreenTitle.fontSize  = 26f;
+        subScreenTitle.color     = new Color(0.78f, 0.78f, 0.78f, 1f);
+        subScreenTitle.characterSpacing = 8f;
+        subScreenTitle.alignment = TextAlignmentOptions.Left;
+        subScreenTitle.raycastTarget = false;
+        var titleRect = titleGO.GetComponent<RectTransform>();
+        titleRect.anchorMin        = new Vector2(0f, 1f);
+        titleRect.anchorMax        = new Vector2(1f, 1f);
+        titleRect.pivot            = new Vector2(0f, 1f);
+        titleRect.anchoredPosition = new Vector2(160f, -120f);
+        titleRect.sizeDelta        = new Vector2(-200f, 50f);
+
+        // Divider
+        CreateDivider(go.transform, new Vector2(160f, -182f), 360f);
+
+        // Body text
+        var bodyGO  = new GameObject("SubBody");
+        bodyGO.transform.SetParent(go.transform, false);
+        subScreenBody = bodyGO.AddComponent<TextMeshProUGUI>();
+        subScreenBody.font      = resolvedFont;
+        subScreenBody.fontSize  = 16f;
+        subScreenBody.color     = new Color(0.55f, 0.57f, 0.6f, 1f);
+        subScreenBody.alignment = TextAlignmentOptions.Left;
+        subScreenBody.lineSpacing = 8f;
+        subScreenBody.raycastTarget = false;
+        var bodyRect = bodyGO.GetComponent<RectTransform>();
+        bodyRect.anchorMin        = new Vector2(0f, 0f);
+        bodyRect.anchorMax        = new Vector2(0.6f, 1f);
+        bodyRect.offsetMin        = new Vector2(160f, 80f);
+        bodyRect.offsetMax        = new Vector2(-40f, -210f);
+
+        // Settings volume row (hidden unless Settings screen)
+        BuildSettingsRow(go.transform);
+
+        return go;
+    }
+
+    // ─── Settings ─────────────────────────────────────────────────────────────
+
+    private GameObject settingsRowObj;
+
+    void BuildSettingsRow(Transform parent)
+    {
+        settingsRowObj = new GameObject("SettingsRow");
+        settingsRowObj.transform.SetParent(parent, false);
+        settingsRowObj.SetActive(false);
+
+        var rowRect = settingsRowObj.AddComponent<RectTransform>();
+        rowRect.anchorMin        = new Vector2(0f, 1f);
+        rowRect.anchorMax        = new Vector2(0f, 1f);
+        rowRect.pivot            = new Vector2(0f, 1f);
+        rowRect.anchoredPosition = new Vector2(160f, -220f);
+        rowRect.sizeDelta        = new Vector2(400f, 44f);
+
+        // Label
+        var labelGO  = new GameObject("VolumeLabel");
+        labelGO.transform.SetParent(settingsRowObj.transform, false);
+        var labelTMP = labelGO.AddComponent<TextMeshProUGUI>();
+        labelTMP.text      = "AUDIO";
+        labelTMP.font      = resolvedFont;
+        labelTMP.fontSize  = 12f;
+        labelTMP.color     = new Color(0.5f, 0.52f, 0.55f, 1f);
+        labelTMP.characterSpacing = 3f;
+        labelTMP.alignment = TextAlignmentOptions.Left;
+        labelTMP.raycastTarget = false;
+        var labelRect = labelGO.GetComponent<RectTransform>();
+        labelRect.anchorMin = new Vector2(0f, 0.5f);
+        labelRect.anchorMax = new Vector2(0f, 0.5f);
+        labelRect.pivot     = new Vector2(0f, 0.5f);
+        labelRect.anchoredPosition = new Vector2(0f, 0f);
+        labelRect.sizeDelta = new Vector2(80f, 30f);
+
+        // Track background
+        var trackGO  = new GameObject("VolumeTrack");
+        trackGO.transform.SetParent(settingsRowObj.transform, false);
+        var trackImg = trackGO.AddComponent<Image>();
+        trackImg.color = new Color(0.1f, 0.11f, 0.12f, 1f);
+        trackImg.raycastTarget = true;
+        volumeTrackRect = trackGO.GetComponent<RectTransform>();
+        volumeTrackRect.anchorMin        = new Vector2(0f, 0.5f);
+        volumeTrackRect.anchorMax        = new Vector2(0f, 0.5f);
+        volumeTrackRect.pivot            = new Vector2(0f, 0.5f);
+        volumeTrackRect.anchoredPosition = new Vector2(100f, 0f);
+        volumeTrackRect.sizeDelta        = new Vector2(240f, 3f);
+
+        // Fill
+        var fillGO  = new GameObject("VolumeFill");
+        fillGO.transform.SetParent(trackGO.transform, false);
+        volumeBarFill = fillGO.AddComponent<Image>();
+        volumeBarFill.color = new Color(0.5f, 0.6f, 0.65f, 0.8f);
+        volumeBarFill.raycastTarget = false;
+        var fillRect = fillGO.GetComponent<RectTransform>();
+        fillRect.anchorMin = new Vector2(0f, 0f);
+        fillRect.anchorMax = new Vector2(0f, 1f);
+        fillRect.pivot     = new Vector2(0f, 0.5f);
+        fillRect.offsetMin = Vector2.zero;
+        fillRect.offsetMax = Vector2.zero;
+        fillRect.sizeDelta = new Vector2(240f * masterVolume, 0f);
+
+        // Value label
+        var valGO   = new GameObject("VolumeValue");
+        valGO.transform.SetParent(settingsRowObj.transform, false);
+        var valTMP  = valGO.AddComponent<TextMeshProUGUI>();
+        valTMP.font     = resolvedFont;
+        valTMP.fontSize = 11f;
+        valTMP.color    = new Color(0.4f, 0.42f, 0.45f, 1f);
+        valTMP.alignment = TextAlignmentOptions.Left;
+        valTMP.raycastTarget = false;
+        var valRect = valGO.GetComponent<RectTransform>();
+        valRect.anchorMin        = new Vector2(0f, 0.5f);
+        valRect.anchorMax        = new Vector2(0f, 0.5f);
+        valRect.pivot            = new Vector2(0f, 0.5f);
+        valRect.anchoredPosition = new Vector2(354f, 0f);
+        valRect.sizeDelta        = new Vector2(50f, 30f);
+
+        // Store ref for update
+        _volumeValueTMP = valTMP;
+        UpdateVolumeUI();
+    }
+
+    private TextMeshProUGUI _volumeValueTMP;
+
+    void UpdateVolumeUI()
+    {
+        if (volumeBarFill == null) return;
+        var fillRect = volumeBarFill.GetComponent<RectTransform>();
+        fillRect.sizeDelta = new Vector2(240f * masterVolume, 0f);
+        if (_volumeValueTMP != null)
+            _volumeValueTMP.text = Mathf.RoundToInt(masterVolume * 100f) + "%";
+    }
+
+    void UpdateVolumeSlider()
+    {
+        if (currentScreen != MenuScreen.Settings) return;
+        if (volumeTrackRect == null) return;
+
+        bool mouseDown = Input.GetMouseButton(0);
+        bool mouseUp   = Input.GetMouseButtonUp(0);
+
+        Vector2 localPoint;
+        bool inTrack = RectTransformUtility.ScreenPointToLocalPointInRectangle(
+            volumeTrackRect, Input.mousePosition, null, out localPoint);
+
+        if (mouseDown && inTrack) isDraggingVolume = true;
+        if (mouseUp) { isDraggingVolume = false; PlayerPrefs.SetFloat("MasterVolume", masterVolume); }
+
+        if (isDraggingVolume)
+        {
+            float halfW = volumeTrackRect.rect.width * 0.5f;
+            float t     = Mathf.InverseLerp(-halfW, halfW, localPoint.x);
+            masterVolume = Mathf.Clamp01(t);
+            UpdateVolumeUI();
+        }
+    }
+
+    // ─── Cursor ───────────────────────────────────────────────────────────────
+
+    void CreateCursor(Transform parent)
+    {
+        var go   = new GameObject("Cursor");
+        go.transform.SetParent(parent, false);
+        cursorRect = go.AddComponent<RectTransform>();
+        cursorRect.anchorMin = new Vector2(0.5f, 0.5f);
+        cursorRect.anchorMax = new Vector2(0.5f, 0.5f);
+        cursorRect.pivot     = new Vector2(0.5f, 0.5f);
+        cursorRect.sizeDelta = new Vector2(24f, 24f);
+
+        // Thin ring
+        var ringGO  = new GameObject("Ring");
+        ringGO.transform.SetParent(go.transform, false);
+        cursorRingImage = ringGO.AddComponent<Image>();
+        cursorRingImage.color = new Color(0.75f, 0.78f, 0.82f, 0.75f);
+        cursorRingImage.raycastTarget = false;
+        var ringRect = ringGO.GetComponent<RectTransform>();
+        ringRect.anchorMin = Vector2.zero;
+        ringRect.anchorMax = Vector2.one;
+        ringRect.offsetMin = Vector2.zero;
+        ringRect.offsetMax = Vector2.zero;
+
+        // Center dot
+        var dotGO  = new GameObject("Dot");
+        dotGO.transform.SetParent(go.transform, false);
+        cursorDotImage = dotGO.AddComponent<Image>();
+        cursorDotImage.color = new Color(0.85f, 0.87f, 0.9f, 0.9f);
+        cursorDotImage.raycastTarget = false;
+        var dotRect = dotGO.GetComponent<RectTransform>();
+        dotRect.anchorMin        = new Vector2(0.5f, 0.5f);
+        dotRect.anchorMax        = new Vector2(0.5f, 0.5f);
+        dotRect.pivot            = new Vector2(0.5f, 0.5f);
+        dotRect.anchoredPosition = Vector2.zero;
+        dotRect.sizeDelta        = new Vector2(3f, 3f);
+
+        // Draw ring as four thin lines via child Images (cross hair style)
+        CreateCursorArm(go.transform, new Vector2(0f, 1f),   new Vector2(2f, 6f),  new Vector2(0f, 4f));
+        CreateCursorArm(go.transform, new Vector2(0f, -1f),  new Vector2(2f, 6f),  new Vector2(0f, -4f));
+        CreateCursorArm(go.transform, new Vector2(-1f, 0f),  new Vector2(6f, 2f),  new Vector2(-4f, 0f));
+        CreateCursorArm(go.transform, new Vector2(1f, 0f),   new Vector2(6f, 2f),  new Vector2(4f, 0f));
+
+        // Hide the ring image since we use arms instead
+        cursorRingImage.enabled = false;
+    }
+
+    void CreateCursorArm(Transform parent, Vector2 dir, Vector2 size, Vector2 offset)
+    {
+        var go   = new GameObject("Arm");
+        go.transform.SetParent(parent, false);
+        var img  = go.AddComponent<Image>();
+        img.color = new Color(0.8f, 0.82f, 0.86f, 0.8f);
+        img.raycastTarget = false;
+        var rect = go.GetComponent<RectTransform>();
+        rect.anchorMin        = new Vector2(0.5f, 0.5f);
+        rect.anchorMax        = new Vector2(0.5f, 0.5f);
+        rect.pivot            = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = offset;
+        rect.sizeDelta        = size;
+    }
+
+    void UpdateCursor()
+    {
+        if (cursorRect == null) return;
+
+        // Convert mouse position to canvas space
+        RectTransform canvasRect = canvas.GetComponent<RectTransform>();
+        Vector2 localPoint;
+        RectTransformUtility.ScreenPointToLocalPointInRectangle(
+            canvasRect, Input.mousePosition, null, out localPoint);
+
+        cursorRect.anchoredPosition = localPoint;
+
+        // Scale breathe: bigger on hover
+        bool overItem = (hoveredItem >= 0);
+        cursorTargetScale = overItem ? 1.4f : 1f;
+        cursorScale = Mathf.Lerp(cursorScale, cursorTargetScale, Time.deltaTime * 8f);
+        cursorRect.localScale = Vector3.one * cursorScale;
+
+        // Subtle opacity pulse
+        float pulse = 0.8f + 0.2f * Mathf.Sin(Time.time * 2.1f);
+        cursorDotImage.color = new Color(0.85f, 0.87f, 0.9f, 0.9f * pulse);
+    }
+
+    // ─── Menu Hover / Click ───────────────────────────────────────────────────
+
+    void UpdateMenuHover()
+    {
+        hoveredItem = -1;
+
+        RectTransform canvasRect = canvas.GetComponent<RectTransform>();
+
+        for (int i = 0; i < menuTexts.Length; i++)
+        {
+            if (menuTexts[i] == null) continue;
+            var rect = menuTexts[i].GetComponent<RectTransform>();
+            Vector2 local;
+            if (RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                    rect, Input.mousePosition, null, out local))
+            {
+                if (rect.rect.Contains(local))
+                {
+                    hoveredItem = i;
+                }
+            }
+        }
+
+        // Animate brightness
+        float dt = Time.deltaTime * 6f;
+        for (int i = 0; i < menuTexts.Length; i++)
+        {
+            float target = (i == hoveredItem) ? 1f : 0f;
+            itemBrightness[i] = Mathf.Lerp(itemBrightness[i], target, dt);
+            menuTexts[i].color = Color.Lerp(
+                new Color(0.38f, 0.4f, 0.43f, 1f),
+                new Color(0.92f, 0.93f, 0.95f, 1f),
+                itemBrightness[i]);
+        }
+    }
+
+    void UpdateMenuClick()
+    {
+        if (!Input.GetMouseButtonDown(0) || hoveredItem < 0) return;
+
+        switch (hoveredItem)
+        {
+            case 0: StartCoroutine(TransitionToLaminarFlow()); break;
+            case 1: ShowScreen(MenuScreen.Controls);           break;
+            case 2: ShowScreen(MenuScreen.Settings);           break;
+            case 3: ShowScreen(MenuScreen.ArtistStatement);    break;
+            case 4: ShowScreen(MenuScreen.Credits);            break;
+            case 5: QuitGame();                                break;
+        }
+    }
+
+    // ─── Screen Switching ─────────────────────────────────────────────────────
+
+    void ShowScreen(MenuScreen screen)
+    {
+        currentScreen = screen;
+        StartCoroutine(SwitchScreens(screen));
+    }
+
+    IEnumerator SwitchScreens(MenuScreen screen)
+    {
+        isSubTransitioning = true;
+        float dur = 0.3f;
+
+        // Fade out current visible screen
+        if (screen == MenuScreen.Main)
+        {
+            // Sub → Main
+            var cg = subScreenObj.GetComponent<CanvasGroup>();
+            yield return StartCoroutine(FadeCanvasGroup(cg, 0f, dur));
+            subScreenObj.SetActive(false);
+            mainScreenObj.SetActive(true);
+        }
+        else
+        {
+            // Main → Sub
+            if (mainScreenObj.activeSelf)
+            {
+                // Quick fade via overlay
+                yield return StartCoroutine(FadeOverlayTo(0.5f, dur * 0.5f));
+            }
+
+            // Configure sub screen content
+            ConfigureSubScreen(screen);
+            subScreenObj.SetActive(true);
+            mainScreenObj.SetActive(false);
+
+            var cg = subScreenObj.GetComponent<CanvasGroup>();
+            cg.alpha = 0f;
+
+            yield return StartCoroutine(FadeOverlayTo(0f, dur * 0.5f));
+            yield return StartCoroutine(FadeCanvasGroup(cg, 1f, dur));
+        }
+
+        isSubTransitioning = false;
+    }
+
+    void ConfigureSubScreen(MenuScreen screen)
+    {
+        settingsRowObj.SetActive(false);
+        subScreenBody.gameObject.SetActive(true);
+
+        switch (screen)
+        {
+            case MenuScreen.Controls:
+                subScreenTitle.text = "CONTROLS";
+                subScreenBody.text  = CONTROLS_TEXT;
+                break;
+
+            case MenuScreen.Settings:
+                subScreenTitle.text = "SETTINGS";
+                subScreenBody.text  = "";
+                subScreenBody.gameObject.SetActive(false);
+                settingsRowObj.SetActive(true);
+                UpdateVolumeUI();
+                break;
+
+            case MenuScreen.ArtistStatement:
+                subScreenTitle.text = "ARTIST STATEMENT";
+                subScreenBody.text  = ARTIST_STATEMENT;
+                break;
+
+            case MenuScreen.Credits:
+                subScreenTitle.text = "CREDITS";
+                subScreenBody.text  = CREDITS_TEXT;
+                break;
+        }
+    }
+
+    IEnumerator FadeCanvasGroup(CanvasGroup cg, float target, float dur)
+    {
+        float start   = cg.alpha;
+        float elapsed = 0f;
+        while (elapsed < dur)
+        {
+            elapsed += Time.deltaTime;
+            cg.alpha = Mathf.Lerp(start, target, elapsed / dur);
+            yield return null;
+        }
+        cg.alpha = target;
+    }
+
+    // ─── Scene Transitions ────────────────────────────────────────────────────
+
+    IEnumerator TransitionToLaminarFlow()
+    {
+        if (isTransitioning) yield break;
+        isTransitioning = true;
+
+        yield return StartCoroutine(FadeOverlayTo(1f, fadeOutDuration));
+
+        var op = SceneManager.LoadSceneAsync(laminarFlowSceneName, LoadSceneMode.Single);
+        op.allowSceneActivation = false;
+        while (op.progress < 0.9f) yield return null;
+        op.allowSceneActivation = true;
+
+        isTransitioning = false;
+    }
+
+    IEnumerator IntroSequence()
+    {
+        // Start from black, slow fade in
+        fadeOverlay.color = Color.black;
+        yield return new WaitForSeconds(0.4f);
+        yield return StartCoroutine(FadeOverlayTo(0f, fadeInDuration));
+    }
+
+    IEnumerator FadeIn(float dur)
+    {
+        fadeOverlay.color = Color.black;
+        yield return new WaitForSeconds(0.3f);
+        yield return StartCoroutine(FadeOverlayTo(0f, dur));
+    }
+
+    IEnumerator FadeOverlayTo(float targetAlpha, float dur)
+    {
+        if (fadeOverlay == null) yield break;
+        float startAlpha = fadeOverlay.color.a;
+        float elapsed    = 0f;
+        while (elapsed < dur)
+        {
+            elapsed += Time.deltaTime;
+            float t = Mathf.SmoothStep(0f, 1f, elapsed / dur);
+            fadeOverlay.color = new Color(0f, 0f, 0f, Mathf.Lerp(startAlpha, targetAlpha, t));
+            yield return null;
+        }
+        fadeOverlay.color = new Color(0f, 0f, 0f, targetAlpha);
+    }
+
+    // ─── Utility ──────────────────────────────────────────────────────────────
 
     void QuitGame()
     {
-        #if UNITY_EDITOR
-            UnityEditor.EditorApplication.isPlaying = false;
-        #else
-            Application.Quit();
-        #endif
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
     }
-    
-    void UpdateLayout()
-    {
-        // Get the canvas RectTransform for proper sizing (accounts for CanvasScaler)
-        RectTransform canvasRect = canvas.GetComponent<RectTransform>();
-        float sw = canvasRect.rect.width;
-        float sh = canvasRect.rect.height;
-        
-        // Fallback to screen size if canvas rect is not ready
-        if (sw <= 0 || sh <= 0)
-        {
-            sw = Screen.width;
-            sh = Screen.height;
-        }
-        
-        // Calculate available space for the 2x2 grid (with margins on all sides)
-        float availableWidth = sw - (margin * 2f);
-        float availableHeight = sh - (margin * 2f);
-        
-        // Calculate panel dimensions to fill the available space while maintaining 16:9 aspect ratio
-        // We have 2 columns and 2 rows with a gap between them
-        // Total grid width = 2 * panelWidth + gap
-        // Total grid height = 2 * panelHeight + gap
-        
-        // Try fitting by width first
-        float panelWidth = (availableWidth - gap) / 2f;
-        float panelHeight = panelWidth / panelAspectRatio;
-        float totalGridHeight = (panelHeight * 2f) + gap;
-        
-        // If too tall, fit by height instead
-        if (totalGridHeight > availableHeight)
-        {
-            panelHeight = (availableHeight - gap) / 2f;
-            panelWidth = panelHeight * panelAspectRatio;
-        }
-        
-        // Calculate grid starting position (centered in available space)
-        float totalGridWidth = (panelWidth * 2f) + gap;
-        totalGridHeight = (panelHeight * 2f) + gap;
-        float startX = (sw - totalGridWidth) / 2f;
-        float startY = (sh - totalGridHeight) / 2f;
-        
-        // Position each panel
-        for (int i = 0; i < 4; i++)
-        {
-            int row = i / 2;    // 0 for top row (indices 0,1), 1 for bottom row (indices 2,3)
-            int col = i % 2;    // 0 for left column, 1 for right column
-            
-            float x = startX + col * (panelWidth + gap);
-            // Flip row so index 0,1 are at top (higher y in screen coords)
-            float y = startY + (1 - row) * (panelHeight + gap);
-            
-            // Frame (includes frame thickness)
-            RectTransform frameRect = feedFrames[i].GetComponent<RectTransform>();
-            frameRect.anchorMin = Vector2.zero;
-            frameRect.anchorMax = Vector2.zero;
-            frameRect.pivot = Vector2.zero;
-            frameRect.anchoredPosition = new Vector2(x - frameThickness, y - frameThickness);
-            frameRect.sizeDelta = new Vector2(panelWidth + frameThickness * 2f, panelHeight + frameThickness * 2f);
-            
-            // Panel (inside frame, filling it minus the frame thickness)
-            RectTransform panelRect = feedPanels[i].GetComponent<RectTransform>();
-            panelRect.anchorMin = Vector2.zero;
-            panelRect.anchorMax = Vector2.one;
-            panelRect.offsetMin = new Vector2(frameThickness, frameThickness);
-            panelRect.offsetMax = new Vector2(-frameThickness, -frameThickness);
-        }
-    }
-    
-    void UpdateStaticNoise()
-    {
-        // Update static noise textures for inactive feeds (CPU-based, no GL)
-        for (int i = 0; i < 4; i++)
-        {
-            if (i == activeFeedIndex) continue;
-            if (staticTextures[i] == null) continue;
-            
-            // Only update every few frames to save performance
-            if (Time.frameCount % 2 == i % 2)
-            {
-                UpdateStaticTexture(i);
-            }
-        }
-    }
-    
-    void UpdateStaticTexture(int index)
-    {
-        Texture2D tex = staticTextures[index];
-        if (tex == null) return;
-        
-        Color[] pixels = tex.GetPixels();
-        int seed = (int)(Time.time * staticSpeed * 1000) + index * 12345;
-        System.Random rng = new System.Random(seed);
-        
-        for (int i = 0; i < pixels.Length; i++)
-        {
-            float noise = (float)rng.NextDouble();
-            pixels[i] = Color.Lerp(staticBaseColor, staticNoiseColor, noise * 0.5f);
-        }
-        
-        tex.SetPixels(pixels);
-        tex.Apply();
-    }
-    
-    void UpdateHoverDetection()
-    {
-        hoveredFeed = -1;
-        
-        // Check if mouse is over active feed
-        if (feedPanels[activeFeedIndex] != null)
-        {
-            RectTransform rect = feedPanels[activeFeedIndex].GetComponent<RectTransform>();
-            Vector2 localPoint;
-            
-            if (RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                rect, Input.mousePosition, null, out localPoint))
-            {
-                if (rect.rect.Contains(localPoint))
-                {
-                    hoveredFeed = activeFeedIndex;
-                }
-            }
-        }
-    }
-    
-    void UpdateFeedBrightness()
-    {
-        float dt = Time.deltaTime * hoverTransitionSpeed;
-        
-        for (int i = 0; i < 4; i++)
-        {
-            if (i == activeFeedIndex)
-            {
-                float target = (hoveredFeed == i) ? 1f : 0f;
-                feedBrightness[i] = Mathf.Lerp(feedBrightness[i], target, dt);
-                
-                Color c = Color.Lerp(dimmedColor, hoveredColor, feedBrightness[i]);
-                feedPanels[i].color = c;
-                
-                // Update cursor
-                if (hoveredFeed == i)
-                {
-                    Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
-                }
-            }
-        }
-    }
-    
-    void UpdateClickDetection()
-    {
-        if (Input.GetMouseButtonDown(0) && hoveredFeed == activeFeedIndex)
-        {
-            StartCoroutine(TransitionToLaminarFlow());
-        }
-    }
-    
-    IEnumerator TransitionToLaminarFlow()
-    {
-        isTransitioning = true;
-        
-        // Fade out to black
-        float elapsed = 0f;
-        while (elapsed < fadeOutDuration)
-        {
-            elapsed += Time.deltaTime;
-            float t = elapsed / fadeOutDuration;
-            fadeOverlay.color = new Color(0, 0, 0, t);
-            yield return null;
-        }
-        fadeOverlay.color = Color.black;
-        
-        // Wait a frame to ensure fade is rendered
-        yield return null;
-        
-        // Load Laminar Flow scene - the fade overlay will persist until scene loads
-        AsyncOperation loadOp = SceneManager.LoadSceneAsync(laminarFlowSceneName, LoadSceneMode.Single);
-        loadOp.allowSceneActivation = false;
-        
-        // Wait until scene is ready
-        while (loadOp.progress < 0.9f)
-        {
-            yield return null;
-        }
-        
-        // Activate the scene - this will destroy this object
-        loadOp.allowSceneActivation = true;
-        
-        isTransitioning = false;
-    }
-    
-    IEnumerator FadeIn()
-    {
-        if (fadeOverlay == null) yield break;
-        
-        fadeOverlay.color = Color.black;
-        
-        yield return new WaitForSeconds(0.5f);
-        
-        // Show panels instantly (no boot sequence when returning)
-        for (int i = 0; i < 4; i++)
-        {
-            if (feedFrames[i] != null)
-            {
-                feedFrames[i].color = frameColor;
-            }
-            if (feedPanels[i] != null)
-            {
-                feedPanels[i].color = (i == activeFeedIndex) ? dimmedColor : Color.white;
-            }
-        }
-        
-        float elapsed = 0f;
-        while (elapsed < fadeInDuration)
-        {
-            elapsed += Time.deltaTime;
-            float t = 1f - (elapsed / fadeInDuration);
-            fadeOverlay.color = new Color(0, 0, 0, t);
-            yield return null;
-        }
-        fadeOverlay.color = new Color(0, 0, 0, 0);
-        
-        isReturning = false;
-    }
-    
-    IEnumerator BootSequence()
-    {
-        isBooting = true;
-        fadeOverlay.color = Color.black;
-        
-        // Hide all panels initially
-        foreach (var panel in feedPanels)
-        {
-            if (panel != null) panel.color = new Color(0, 0, 0, 0);
-        }
-        foreach (var frame in feedFrames)
-        {
-            if (frame != null) frame.color = new Color(0, 0, 0, 0);
-        }
-        
-        yield return new WaitForSeconds(0.5f);
-        
-        // Fade in from black
-        float fadeDur = 1f;
-        float elapsed = 0f;
-        while (elapsed < fadeDur)
-        {
-            elapsed += Time.deltaTime;
-            float t = elapsed / fadeDur;
-            fadeOverlay.color = new Color(0, 0, 0, 1f - t);
-            yield return null;
-        }
-        fadeOverlay.color = new Color(0, 0, 0, 0);
-        
-        // Boot panels one by one
-        for (int i = 0; i < 4; i++)
-        {
-            if (feedFrames[i] != null)
-            {
-                // Fade in frame
-                float frameFade = 0.3f;
-                elapsed = 0f;
-                while (elapsed < frameFade)
-                {
-                    elapsed += Time.deltaTime;
-                    float t = elapsed / frameFade;
-                    feedFrames[i].color = Color.Lerp(new Color(0, 0, 0, 0), frameColor, t);
-                    yield return null;
-                }
-                feedFrames[i].color = frameColor;
-            }
-            
-            if (feedPanels[i] != null)
-            {
-                // Flash then show panel
-                feedPanels[i].color = Color.white;
-                yield return new WaitForSeconds(0.05f);
-                
-                Color targetColor = (i == activeFeedIndex) ? dimmedColor : Color.white;
-                feedPanels[i].color = targetColor;
-            }
-            
-            yield return new WaitForSeconds(0.15f);
-        }
-        
-        isBooting = false;
-    }
-    
-    void OnDestroy()
-    {
-        // Cleanup static textures
-        for (int i = 0; i < 4; i++)
-        {
-            if (staticTextures[i] != null)
-            {
-                Destroy(staticTextures[i]);
-            }
-        }
-    }
-    
+
     void OnGUI()
     {
         if (!showDebugInfo) return;
-        
-        GUILayout.BeginArea(new Rect(10, 10, 250, 100));
-        GUI.color = new Color(0, 0, 0, 0.8f);
-        GUI.DrawTexture(new Rect(0, 0, 250, 100), Texture2D.whiteTexture);
-        GUI.color = Color.white;
-        
-        GUILayout.Label("=== CONSOLE ===");
-        GUILayout.Label($"Hovered: {hoveredFeed}");
-        GUILayout.Label($"Active Feed Brightness: {feedBrightness[activeFeedIndex]:F2}");
-        GUILayout.Label($"Transitioning: {isTransitioning}");
+        GUILayout.BeginArea(new Rect(10, 10, 200, 60));
+        GUILayout.Label($"Screen: {currentScreen}");
+        GUILayout.Label($"Hovered: {hoveredItem}");
+        GUILayout.Label($"Volume: {masterVolume:F2}");
         GUILayout.EndArea();
     }
 }

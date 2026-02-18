@@ -406,27 +406,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5f6fd302df680ea44a8a18f93aecd2cc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  margin: 40
-  gap: 8
-  panelAspectRatio: 1.778
-  activeFeedIndex: 0
-  previewTexture: {fileID: 0}
-  dimmedColor: {r: 0.4, g: 0.4, b: 0.4, a: 1}
-  hoveredColor: {r: 1, g: 1, b: 1, a: 1}
-  hoverTransitionSpeed: 5
-  staticSpeed: 15
-  staticBaseColor: {r: 0.1, g: 0.12, b: 0.1, a: 1}
-  staticNoiseColor: {r: 0.2, g: 0.25, b: 0.2, a: 1}
-  consoleBackgroundColor: {r: 0.02, g: 0.02, b: 0.02, a: 1}
-  frameColor: {r: 0.08, g: 0.08, b: 0.08, a: 1}
-  frameThickness: 4
-  crtOverlayTexture: {fileID: 2800000, guid: ff2a0f89bc251f34cb5e9cc9aa274c29, type: 3}
-  crtOverlayOpacity: 0.6
-  crtOverlayScrollSpeed: 0.5
-  crtOverlayFlicker: 0.05
-  fadeOutDuration: 1.5
-  fadeInDuration: 2
   laminarFlowSceneName: Laminar Flow
+  versionString: v1.4.7.beta
+  backgroundMusic: {fileID: 8300000, guid: 8718b861e4cc347bba4d902dc1018d74, type: 3}
+  musicVolume: 0.35
+  fadeInDuration: 2
+  fadeOutDuration: 1.5
+  customFont: {fileID: 11400000, guid: 0ec5e21297d14354a971e9a96f24c2ba, type: 2}
   showDebugInfo: 0
 --- !u!4 &1621743636
 Transform:

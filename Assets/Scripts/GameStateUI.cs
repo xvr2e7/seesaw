@@ -9,6 +9,10 @@ public class GameStateUI : MonoBehaviour
     public GameManager gameManager;
     public PlayerToolController playerTool;
     public FlowSimulation flowSimulation;
+
+    [Header("Font")]
+    [Tooltip("Space Mono or other custom font for HUD labels")]
+    public Font customFont;
     
     [Header("Layout")]
     [Tooltip("X position from right edge")]
@@ -23,11 +27,11 @@ public class GameStateUI : MonoBehaviour
     public float maxDisplayDivergence = 2f;
     
     [Header("Colors")]
-    public Color textColor = new Color(0.85f, 0.85f, 0.85f, 0.9f);
-    public Color barBackgroundColor = new Color(0.15f, 0.15f, 0.15f, 0.8f);
-    public Color barFillColorLow = new Color(0.3f, 0.7f, 0.4f, 0.9f);
-    public Color barFillColorHigh = new Color(0.9f, 0.3f, 0.2f, 0.9f);
-    public Color panelBackgroundColor = new Color(0.05f, 0.05f, 0.05f, 0.75f);
+    public Color textColor = new Color(0.50f, 0.52f, 0.56f, 0.85f);
+    public Color barBackgroundColor = new Color(0.08f, 0.08f, 0.09f, 0.9f);
+    public Color barFillColorLow = new Color(0.38f, 0.44f, 0.50f, 0.85f);
+    public Color barFillColorHigh = new Color(0.55f, 0.40f, 0.38f, 0.85f);
+    public Color panelBackgroundColor = new Color(0.02f, 0.02f, 0.025f, 0.82f);
     
     [Header("Final Score")]
     public float scoreTransitionDuration = 1.5f;
@@ -81,31 +85,34 @@ public class GameStateUI : MonoBehaviour
     void InitStyles()
     {
         if (stylesInitialized) return;
-        
+
         labelStyle = new GUIStyle(GUI.skin.label)
         {
-            fontSize = 11,
+            fontSize = 10,
             fontStyle = FontStyle.Normal,
             alignment = TextAnchor.MiddleLeft
         };
+        if (customFont != null) labelStyle.font = customFont;
         labelStyle.normal.textColor = textColor;
 
         scoreStyle = new GUIStyle(GUI.skin.label)
         {
-            fontSize = 48,
-            fontStyle = FontStyle.Bold,
-            alignment = TextAnchor.MiddleCenter
-        };
-        scoreStyle.normal.textColor = Color.white;
-        
-        scoreLabelStyle = new GUIStyle(GUI.skin.label)
-        {
-            fontSize = 14,
+            fontSize = 42,
             fontStyle = FontStyle.Normal,
             alignment = TextAnchor.MiddleCenter
         };
-        scoreLabelStyle.normal.textColor = new Color(0.7f, 0.7f, 0.7f, 0.9f);
-        
+        if (customFont != null) scoreStyle.font = customFont;
+        scoreStyle.normal.textColor = new Color(0.75f, 0.75f, 0.78f, 1f);
+
+        scoreLabelStyle = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = 11,
+            fontStyle = FontStyle.Normal,
+            alignment = TextAnchor.MiddleCenter
+        };
+        if (customFont != null) scoreLabelStyle.font = customFont;
+        scoreLabelStyle.normal.textColor = new Color(0.40f, 0.42f, 0.45f, 0.9f);
+
         stylesInitialized = true;
     }
     
@@ -207,30 +214,35 @@ public class GameStateUI : MonoBehaviour
     void DrawHUD()
     {
         float sw = Screen.width;
-        float panelX = sw - rightMargin - divergenceBarWidth - 20f;
+        float panelX = sw - rightMargin - divergenceBarWidth - 16f;
         float panelY = topOffset;
-        float panelWidth = divergenceBarWidth + 20f;
-        float panelHeight = 42f;
-        
-        // Panel background
+        float panelWidth = divergenceBarWidth + 16f;
+        float panelHeight = 36f;
+
+        // Panel background — very dark, minimal
         GUI.color = panelBackgroundColor;
         GUI.DrawTexture(new Rect(panelX, panelY, panelWidth, panelHeight), whiteTexture);
         GUI.color = Color.white;
-        
-        float contentX = panelX + 10f;
-        float currentY = panelY + 8f;
-        
+
+        // Thin top border line for definition
+        GUI.color = new Color(0.22f, 0.24f, 0.27f, 0.6f);
+        GUI.DrawTexture(new Rect(panelX, panelY, panelWidth, 1f), whiteTexture);
+        GUI.color = Color.white;
+
+        float contentX = panelX + 8f;
+        float currentY = panelY + 7f;
+
         // Divergence label and value
         float divergenceValue = smoothedDivergence;
-        string divergenceText = $"DIVERGENCE  {divergenceValue:F2}";
-        GUI.Label(new Rect(contentX, currentY, divergenceBarWidth, 16f), divergenceText, labelStyle);
-        
-        currentY += 18f;
-        
+        string divergenceText = $"DIVERGENCE   {divergenceValue:F2}";
+        GUI.Label(new Rect(contentX, currentY, divergenceBarWidth, 14f), divergenceText, labelStyle);
+
+        currentY += 14f;
+
         // Divergence bar background
         GUI.color = barBackgroundColor;
         GUI.DrawTexture(new Rect(contentX, currentY, divergenceBarWidth, divergenceBarHeight), whiteTexture);
-        
+
         // Divergence bar fill
         float fillRatio = Mathf.Clamp01(divergenceValue / maxDisplayDivergence);
         Color fillColor = Color.Lerp(barFillColorLow, barFillColorHigh, fillRatio);

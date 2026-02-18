@@ -40,10 +40,10 @@ public class AgentRenderer : MonoBehaviour
     public bool useTurbulenceColoring = true;
 
     [Tooltip("Base color for normal (non-turbulent) agents")]
-    public Color normalAgentColor = new Color(0.35f, 0.35f, 0.4f, 0.6f);
+    public Color normalAgentColor = new Color(0.28f, 0.28f, 0.30f, 0.55f);
 
     [Tooltip("Color for dampened agents")]
-    public Color dampenedAgentColor = new Color(0.5f, 0.7f, 0.9f, 0.7f);
+    public Color dampenedAgentColor = new Color(0.42f, 0.46f, 0.52f, 0.65f);
 
     [Header("Fallback Color")]
     public Color fallbackColor = new Color(0.9f, 0.9f, 0.9f, 0.6f);
@@ -167,22 +167,22 @@ public class AgentRenderer : MonoBehaviour
         float magnitude = velocity.magnitude;
         float speedRatio = Mathf.Clamp01(magnitude / maxSpeed);
 
-        // Base gray color for organized flow
-        float grayValue = Mathf.Lerp(0.3f, 0.65f, speedRatio);
-        Color organizedColor = new Color(grayValue, grayValue, grayValue, agentOpacity);
+        // Base gray for organized flow — dim, barely visible
+        float grayValue = Mathf.Lerp(0.18f, 0.40f, speedRatio);
+        Color organizedColor = new Color(grayValue, grayValue, grayValue * 1.04f, agentOpacity);
 
-        // Pattern-specific colors (matching shader)
-        // 1=Circular(green), 2=Scatter(red), 3=Vortex(purple), 4=Wave(cyan), 5=Oscillation(yellow), 6=Cluster(gray)
-        Color patternColor = new Color(0.5f, 0.3f, 0.2f, agentOpacity); // Default
+        // Pattern-specific colors — desaturated, dim, hollow tints matching menu palette
+        // 1=Circular, 2=Scatter, 3=Vortex, 4=Wave, 5=Oscillation, 6=Cluster
+        Color patternColor = new Color(0.38f, 0.36f, 0.34f, agentOpacity); // Default
 
         switch (pattern)
         {
-            case 1: patternColor = new Color(0.3f, 0.9f, 0.4f, agentOpacity); break; // Circular: Green
-            case 2: patternColor = new Color(1.0f, 0.3f, 0.3f, agentOpacity); break; // Scatter: Red
-            case 3: patternColor = new Color(0.9f, 0.5f, 0.9f, agentOpacity); break; // Vortex: Purple
-            case 4: patternColor = new Color(0.3f, 0.9f, 0.9f, agentOpacity); break; // Wave: Cyan
-            case 5: patternColor = new Color(1.0f, 0.9f, 0.3f, agentOpacity); break; // Oscillation: Yellow
-            case 6: patternColor = new Color(0.7f, 0.7f, 0.7f, agentOpacity); break; // Cluster: Light gray
+            case 1: patternColor = new Color(0.38f, 0.48f, 0.40f, agentOpacity); break; // Circular: dim sage
+            case 2: patternColor = new Color(0.50f, 0.36f, 0.34f, agentOpacity); break; // Scatter: dim rose
+            case 3: patternColor = new Color(0.42f, 0.38f, 0.48f, agentOpacity); break; // Vortex: dim lavender
+            case 4: patternColor = new Color(0.34f, 0.42f, 0.48f, agentOpacity); break; // Wave: dim slate-blue
+            case 5: patternColor = new Color(0.48f, 0.46f, 0.34f, agentOpacity); break; // Oscillation: dim straw
+            case 6: patternColor = new Color(0.40f, 0.40f, 0.42f, agentOpacity); break; // Cluster: cool gray
         }
 
         // Modulate by speed

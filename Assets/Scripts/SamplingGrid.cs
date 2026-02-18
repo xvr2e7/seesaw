@@ -26,13 +26,13 @@ public class SamplingGrid : MonoBehaviour
     public float cornerSize = 0.8f;
 
     [Tooltip("Color when idle")]
-    public Color idleColor = new Color(0.6f, 0.8f, 1f, 0.7f);
+    public Color idleColor = new Color(0.40f, 0.44f, 0.50f, 0.55f);
 
     [Tooltip("Color when actively correcting")]
-    public Color activeColor = new Color(0.3f, 0.9f, 1f, 1f);
+    public Color activeColor = new Color(0.52f, 0.56f, 0.62f, 0.80f);
 
     [Tooltip("Color when low energy")]
-    public Color lowEnergyColor = new Color(1f, 0.6f, 0.3f, 0.5f);
+    public Color lowEnergyColor = new Color(0.50f, 0.42f, 0.36f, 0.45f);
 
     [Header("Pulse Effects")]
     [Tooltip("Idle pulse speed")]
@@ -45,17 +45,20 @@ public class SamplingGrid : MonoBehaviour
 
     [Tooltip("Pulse intensity")]
     [Range(0f, 0.5f)]
-    public float pulseIntensity = 0.2f;
+    public float pulseIntensity = 0.12f;
 
     [Header("Event Name Display")]
+    [Tooltip("Custom font for event name label (assign Space Mono Regular)")]
+    public Font customFont;
+
     [Tooltip("Font size for event name")]
-    public int eventNameFontSize = 18;
+    public int eventNameFontSize = 14;
 
     [Tooltip("Distance below grid center")]
     public float eventNameOffset = 1.5f;
 
     [Tooltip("Event name color")]
-    public Color eventNameColor = new Color(1f, 1f, 1f, 0.9f);
+    public Color eventNameColor = new Color(0.52f, 0.54f, 0.58f, 0.80f);
 
     // Runtime state
     private Vector2 currentWorldPos;
@@ -143,7 +146,11 @@ public class SamplingGrid : MonoBehaviour
         eventNameStyle.fontSize = eventNameFontSize;
         eventNameStyle.alignment = TextAnchor.MiddleCenter;
         eventNameStyle.normal.textColor = eventNameColor;
-        eventNameStyle.font = Font.CreateDynamicFontFromOSFont("Consolas", eventNameFontSize);
+
+        if (customFont != null)
+            eventNameStyle.font = customFont;
+        else
+            eventNameStyle.font = Font.CreateDynamicFontFromOSFont("Consolas", eventNameFontSize);
     }
 
     Mesh CreateSquareMesh()

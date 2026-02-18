@@ -4,16 +4,16 @@ Shader "LaminarFlow/OpticalFlowHSV"
     {
         _VelocityTex ("Velocity Texture", 2D) = "gray" {}
         _VelocityScale ("Velocity Scale", Range(0.1, 5)) = 1.5
-        _SaturationRange ("Saturation (Min, Max)", Vector) = (0.4, 0.95, 0, 0)
-        _ValueRange ("Value (Min, Max)", Vector) = (0.2, 0.9, 0, 0)
-        _HueOffset ("Hue Offset", Range(0, 1)) = 0
-        
+        _SaturationRange ("Saturation (Min, Max)", Vector) = (0.0, 0.12, 0, 0)
+        _ValueRange ("Value (Min, Max)", Vector) = (0.04, 0.38, 0, 0)
+        _HueOffset ("Hue Offset", Range(0, 1)) = 0.6
+
         [Header(Visual Style)]
-        _ColorVibrancy ("Color Vibrancy", Range(0.5, 2)) = 1.3
-        _FlowIntensity ("Flow Intensity", Range(0, 3)) = 1.5
-        _BackgroundColor ("Background Color", Color) = (0.08, 0.06, 0.12, 1)
-        _NoiseAmount ("Noise Amount", Range(0, 0.15)) = 0.03
-        _BlendSoftness ("Blend Softness", Range(0, 1)) = 0.3
+        _ColorVibrancy ("Color Vibrancy", Range(0.5, 2)) = 0.85
+        _FlowIntensity ("Flow Intensity", Range(0, 3)) = 1.2
+        _BackgroundColor ("Background Color", Color) = (0.02, 0.02, 0.025, 1)
+        _NoiseAmount ("Noise Amount", Range(0, 0.15)) = 0.04
+        _BlendSoftness ("Blend Softness", Range(0, 1)) = 0.15
     }
     
     SubShader

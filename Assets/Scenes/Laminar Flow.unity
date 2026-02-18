@@ -152,7 +152,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   flowSimulation: {fileID: 1382237305}
-  playerTool: {fileID: 0}
+  playerTool: {fileID: 1096061148}
   particlesPerAgent: 2
   spawnChance: 0.3
   maxParticlesPerFrame: 50
@@ -208,7 +208,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   gameManager: {fileID: 1718674880}
-  playerTool: {fileID: 0}
+  playerTool: {fileID: 1096061148}
   cameraController: {fileID: 2057931244}
   flowSimulation: {fileID: 1382237305}
   recordingInterval: 2
@@ -355,8 +355,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   gameManager: {fileID: 1718674880}
-  playerTool: {fileID: 0}
+  playerTool: {fileID: 1096061148}
   flowSimulation: {fileID: 1382237305}
+  customFont: {fileID: 12800000, guid: bd59f6191291fe54698226682670ca7b, type: 3}
   rightMargin: 20
   topOffset: 170
   divergenceBarWidth: 140
@@ -586,7 +587,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   flowSimulation: {fileID: 1382237305}
   eventScheduler: {fileID: 1382237308}
-  playerTool: {fileID: 0}
+  playerTool: {fileID: 1096061148}
   cameraController: {fileID: 2057931244}
   soundscape: {fileID: 1940927234}
   gameStateUI: {fileID: 1356720807}
@@ -763,7 +764,7 @@ MonoBehaviour:
   inputRecorder: {fileID: 755271954}
   flowSimulation: {fileID: 1382237305}
   flowVisualizer: {fileID: 1382237306}
-  agentRenderer: {fileID: 0}
+  agentRenderer: {fileID: 1382237304}
   mainCamera: {fileID: 2057931241}
   videoFileName: laminar_demo.mp4
   videoVolume: 0.6

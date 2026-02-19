@@ -11,13 +11,13 @@ public class ToolEnergySystem : MonoBehaviour
     public float maxEnergy = 100f;
 
     [Tooltip("Energy consumed per second while tool is active")]
-    public float drainRate = 20f;
+    public float drainRate = 8f;
 
     [Tooltip("Energy regenerated per second while tool is inactive")]
-    public float regenRate = 8f;
+    public float regenRate = 15f;
 
     [Tooltip("Delay before energy starts regenerating after use")]
-    public float regenDelay = 0.5f;
+    public float regenDelay = 0.3f;
 
     [Tooltip("Minimum energy required to activate tool")]
     public float minActivationEnergy = 5f;

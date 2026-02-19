@@ -321,7 +321,11 @@ public class DocumentaryController : MonoBehaviour
         if (scheduler != null) scheduler.enabled = false;
         
         var playerTool = FindObjectOfType<PlayerToolController>();
-        if (playerTool != null) playerTool.SetToolEnabled(false);
+        if (playerTool != null)
+        {
+            playerTool.SetToolEnabled(false);
+            playerTool.SetDocumentaryPhase(true);
+        }
         
         var cameraController = FindObjectOfType<CameraController>();
         if (cameraController != null) cameraController.enabled = false;

@@ -49,13 +49,13 @@ public class ConsoleController : MonoBehaviour
         "See/Saw offers no answer. It holds the question open.";
 
     private const string CONTROLS_TEXT =
-        "MOUSE         move / aim\n" +
-        "LEFT CLICK    interact / select\n" +
-        "ESC           pause / quit\n\n" +
-        "Within the simulation:\n" +
-        "MOUSE         direct the convergence field\n" +
+        "MOUSE         aim the convergence field\n" +
+        "LEFT CLICK    activate selected tool\n" +
         "SCROLL        adjust field radius\n" +
-        "HOLD LMB      amplify influence";
+        "ESC           pause\n\n" +
+        "1  SCAN        hold to dampen turbulence\n" +
+        "2  PULSE       instant burst — 8s cooldown\n" +
+        "3  LOCK        freeze agents — 14s cooldown";
 
     private const string CREDITS_TEXT =
         "Concept & Design\n" +
@@ -77,11 +77,12 @@ public class ConsoleController : MonoBehaviour
     private TextMeshProUGUI subScreenTitle;
     private TextMeshProUGUI subScreenBody;
 
-    // Menu items (Main screen)
-    private string[]          menuLabels  = { "START", "CONTROLS", "SETTINGS", "ARTIST STATEMENT", "CREDITS", "QUIT" };
+    // Menu items (Main screen) — built dynamically in CreateMainScreen
+    private string[]          menuLabels;
     private TextMeshProUGUI[] menuTexts;
     private int               hoveredItem = -1;
     private float[]           itemBrightness;
+    private bool              hasSavedGame = false; // whether CONTINUE is shown
 
     // Settings
     private float masterVolume = 1f;
@@ -102,8 +103,8 @@ public class ConsoleController : MonoBehaviour
     private Particle[]  particles;
     private Image[]     particleImages;
 
-    // Sun core — drifts subtly toward cursor
-    private RectTransform sunCoreRect;
+    // Sun — outer halo is static; only inner core tracks cursor
+    private RectTransform sunCoreRect;   // inner, follows cursor
     private Vector2       sunCoreBase = new Vector2(0f, 20f);
     private Vector2       sunCoreSmoothed;
 
@@ -127,6 +128,9 @@ public class ConsoleController : MonoBehaviour
     private static bool returningFromDocumentary = false;
     public  static void SetReturningFromDocumentary() => returningFromDocumentary = true;
 
+    private static bool returningFromGame = false;
+    public  static void SetReturningFromGame() => returningFromGame = true;
+
     // Font (resolved in Start)
     private TMP_FontAsset resolvedFont;
 
@@ -149,6 +153,11 @@ public class ConsoleController : MonoBehaviour
         if (returningFromDocumentary)
         {
             returningFromDocumentary = false;
+            StartCoroutine(FadeIn(fadeInDuration));
+        }
+        else if (returningFromGame)
+        {
+            returningFromGame = false;
             StartCoroutine(FadeIn(fadeInDuration));
         }
         else
@@ -192,7 +201,6 @@ public class ConsoleController : MonoBehaviour
     void OnDestroy()
     {
         Cursor.visible = true;
-        if (sunGlowTexture != null) Destroy(sunGlowTexture);
     }
 
     // ─── Font ─────────────────────────────────────────────────────────────────
@@ -271,40 +279,36 @@ public class ConsoleController : MonoBehaviour
         Canvas.ForceUpdateCanvases();
     }
 
-    // Radial glow texture — generated once at startup
     private Texture2D sunGlowTexture;
 
     void CreateBackground(Transform parent)
     {
         // Base dark fill
-        var bg = CreateFullscreenImage(parent, "Background", new Color(0.015f, 0.015f, 0.018f, 1f));
+        var bg = CreateFullscreenImage(parent, "Background", new Color(0.008f, 0.008f, 0.010f, 1f));
         bg.raycastTarget = false;
 
-        // Bake once at startup — zero per-frame cost
-        sunGlowTexture = CreateSunTexture(256, 256);
+        sunGlowTexture = CreateSunTexture(512, 512);
 
-        // Wide halo — large, very faint, smooth fade into background
-        AddSunLayer(parent, "SunHalo", new Vector2(0f, 20f), new Vector2(1100f, 1100f), new Color(0.40f, 0.24f, 0.09f, 0.09f));
+        // Outer halo — fixed, does not follow cursor
+        AddSunLayer(parent, "SunHalo", sunCoreBase, new Vector2(820f, 820f), new Color(0.40f, 0.22f, 0.06f, 0.11f));
 
-        // Core — tracks cursor
+        // Inner core — tracks cursor
         sunCoreSmoothed = sunCoreBase;
-        sunCoreRect = AddSunLayer(parent, "SunCore", sunCoreBase, new Vector2(380f, 380f), new Color(0.68f, 0.46f, 0.22f, 0.50f));
+        sunCoreRect = AddSunLayer(parent, "SunCore", sunCoreBase, new Vector2(320f, 320f), new Color(0.62f, 0.38f, 0.12f, 0.26f));
     }
 
     RectTransform AddSunLayer(Transform parent, string name, Vector2 pos, Vector2 size, Color tint)
     {
-        var go   = new GameObject(name);
+        var go  = new GameObject(name);
         go.transform.SetParent(parent, false);
-        var img  = go.AddComponent<RawImage>();
+        var img = go.AddComponent<RawImage>();
         img.texture       = sunGlowTexture;
         img.raycastTarget = false;
 
-        // Additive blending: contributes (tint * texture) to whatever is beneath.
-        // At zero texture value the contribution is exactly zero — no edge artifact.
         var mat = new Material(Shader.Find("UI/Default"));
-        mat.SetInt("_SrcBlend",  (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-        mat.SetInt("_DstBlend",  (int)UnityEngine.Rendering.BlendMode.One);
-        mat.SetInt("_ZWrite",    0);
+        mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.One);
+        mat.SetInt("_ZWrite",   0);
         img.material = mat;
         img.color    = tint;
 
@@ -317,13 +321,13 @@ public class ConsoleController : MonoBehaviour
         return rect;
     }
 
-    // Single smooth radial falloff baked once.
-    // Three layers in CreateBackground do the heavy lifting visually.
     Texture2D CreateSunTexture(int w, int h)
     {
         var tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
-        tex.filterMode = FilterMode.Bilinear;
+        // Trilinear + high res eliminates banding from radial gradients
+        tex.filterMode = FilterMode.Trilinear;
         tex.wrapMode   = TextureWrapMode.Clamp;
+        tex.anisoLevel = 9;
         var pixels = new Color[w * h];
 
         float invW = 1f / (w - 1);
@@ -337,17 +341,18 @@ public class ConsoleController : MonoBehaviour
                 float v = y * invH * 2f - 1f;
                 float d = Mathf.Sqrt(u * u + v * v);
 
-                // Gentle gaussian — fades smoothly to zero exactly at the texture edge.
-                // A single layer with this texture has no visible boundary.
-                float g = Mathf.Exp(-d * d * 1.2f);
-                g = Mathf.Pow(g, 1.8f);
+                // Wide gaussian: fuzzy sphere, bright centre, dissolves well before edge.
+                // No power exponent — keeps the curve monotone and banding-free.
+                float g = Mathf.Exp(-d * d / (2f * 0.45f * 0.45f));
+                // Clamp to zero past 90% radius so texture boundary is always black
+                g *= Mathf.Clamp01((1f - d / 0.9f) * 8f);
 
                 pixels[y * w + x] = new Color(g, g, g, g);
             }
         }
 
         tex.SetPixels(pixels);
-        tex.Apply();
+        tex.Apply(true); // generateMipMaps=true — mips smooth out banding further
         return tex;
     }
 
@@ -550,7 +555,13 @@ public class ConsoleController : MonoBehaviour
         // Divider line
         CreateDivider(go.transform, new Vector2(160f, -224f), 280f);
 
-        // Menu items
+        // Menu items — label list depends on whether a save exists
+        hasSavedGame = GameManager.HasSavedGame();
+        if (hasSavedGame)
+            menuLabels = new string[] { "CONTINUE", "NEW GAME", "CONTROLS", "SETTINGS", "ARTIST STATEMENT", "CREDITS", "QUIT" };
+        else
+            menuLabels = new string[] { "START", "CONTROLS", "SETTINGS", "ARTIST STATEMENT", "CREDITS", "QUIT" };
+
         menuTexts      = new TextMeshProUGUI[menuLabels.Length];
         itemBrightness = new float[menuLabels.Length];
 
@@ -934,14 +945,32 @@ public class ConsoleController : MonoBehaviour
     {
         if (!Input.GetMouseButtonDown(0) || hoveredItem < 0) return;
 
-        switch (hoveredItem)
+        if (hasSavedGame)
         {
-            case 0: StartCoroutine(TransitionToLaminarFlow()); break;
-            case 1: ShowScreen(MenuScreen.Controls);           break;
-            case 2: ShowScreen(MenuScreen.Settings);           break;
-            case 3: ShowScreen(MenuScreen.ArtistStatement);    break;
-            case 4: ShowScreen(MenuScreen.Credits);            break;
-            case 5: QuitGame();                                break;
+            // CONTINUE / NEW GAME / CONTROLS / SETTINGS / ARTIST STATEMENT / CREDITS / QUIT
+            switch (hoveredItem)
+            {
+                case 0: StartCoroutine(TransitionToLaminarFlow(resume: true));  break; // CONTINUE
+                case 1: StartCoroutine(TransitionToLaminarFlow(resume: false)); break; // NEW GAME
+                case 2: ShowScreen(MenuScreen.Controls);                        break;
+                case 3: ShowScreen(MenuScreen.Settings);                        break;
+                case 4: ShowScreen(MenuScreen.ArtistStatement);                 break;
+                case 5: ShowScreen(MenuScreen.Credits);                         break;
+                case 6: QuitGame();                                             break;
+            }
+        }
+        else
+        {
+            // START / CONTROLS / SETTINGS / ARTIST STATEMENT / CREDITS / QUIT
+            switch (hoveredItem)
+            {
+                case 0: StartCoroutine(TransitionToLaminarFlow(resume: false)); break;
+                case 1: ShowScreen(MenuScreen.Controls);                        break;
+                case 2: ShowScreen(MenuScreen.Settings);                        break;
+                case 3: ShowScreen(MenuScreen.ArtistStatement);                 break;
+                case 4: ShowScreen(MenuScreen.Credits);                         break;
+                case 5: QuitGame();                                             break;
+            }
         }
     }
 
@@ -1038,10 +1067,13 @@ public class ConsoleController : MonoBehaviour
 
     // ─── Scene Transitions ────────────────────────────────────────────────────
 
-    IEnumerator TransitionToLaminarFlow()
+    IEnumerator TransitionToLaminarFlow(bool resume = false)
     {
         if (isTransitioning) yield break;
         isTransitioning = true;
+
+        if (!resume)
+            GameManager.ClearSavedGame();
 
         yield return StartCoroutine(FadeOverlayTo(1f, fadeOutDuration));
 

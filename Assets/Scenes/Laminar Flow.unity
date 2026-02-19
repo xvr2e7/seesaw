@@ -153,16 +153,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   flowSimulation: {fileID: 1382237305}
   playerTool: {fileID: 1096061148}
-  particlesPerAgent: 2
-  spawnChance: 0.3
-  maxParticlesPerFrame: 50
-  particleColor: {r: 0.6, g: 0.9, b: 1, a: 0.8}
-  particleColorEnd: {r: 0.3, g: 0.6, b: 0.9, a: 0}
-  particleLifetime: 0.6
-  particleSize: 0.15
-  particleSpeed: 3
-  particleMesh: {fileID: 0}
-  particleMaterial: {fileID: 0}
+  scanLineColor: {r: 0.68, g: 0.72, b: 0.8, a: 0.85}
+  scanLineThickness: 2
 --- !u!4 &279401980
 Transform:
   m_ObjectHideFlags: 0
@@ -280,13 +272,20 @@ MonoBehaviour:
   energySystem: {fileID: 0}
   performanceTracker: {fileID: 0}
   turbulenceClassifier: {fileID: 0}
-  baseRadius: 8
+  scanRadius: 12
+  scanDampeningStrength: 0.4
+  scanRampUpTime: 1.5
+  scanBaseFraction: 0.3
+  pulseRadius: 12
+  pulseDampeningStrength: 1.8
+  pulseCooldown: 8
+  lockRadius: 4
+  lockFreezeDuration: 2
+  lockCooldown: 14
   minRadius: 2
   maxRadius: 25
   scrollSensitivity: 0.5
-  baseDampeningStrength: 0.3
-  maxDampeningStrength: 0.85
-  rampUpTime: 1.5
+  hudFont: {fileID: 12800000, guid: bd59f6191291fe54698226682670ca7b, type: 3}
   showDebugInfo: 0
 --- !u!1 &1356720804
 GameObject:
@@ -354,23 +353,33 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b081988e3a5701d4f8b2795d144bf06e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  gameManager: {fileID: 1718674880}
-  playerTool: {fileID: 1096061148}
-  flowSimulation: {fileID: 1382237305}
+  gameManager: {fileID: 0}
+  playerTool: {fileID: 0}
+  flowSimulation: {fileID: 0}
   customFont: {fileID: 12800000, guid: bd59f6191291fe54698226682670ca7b, type: 3}
-  rightMargin: 20
-  topOffset: 170
-  divergenceBarWidth: 140
+  leftMargin: 20
+  divergenceBarWidth: 200
   divergenceBarHeight: 8
   maxDisplayDivergence: 2
-  textColor: {r: 0.85, g: 0.85, b: 0.85, a: 0.9}
-  barBackgroundColor: {r: 0.15, g: 0.15, b: 0.15, a: 0.8}
-  barFillColorLow: {r: 0.3, g: 0.7, b: 0.4, a: 0.9}
-  barFillColorHigh: {r: 0.9, g: 0.3, b: 0.2, a: 0.9}
-  panelBackgroundColor: {r: 0.05, g: 0.05, b: 0.05, a: 0.75}
-  scoreTransitionDuration: 2
+  textColor: {r: 0.5, g: 0.52, b: 0.56, a: 0.85}
+  barBackgroundColor: {r: 0.08, g: 0.08, b: 0.09, a: 0.9}
+  barFillColorLow: {r: 0.38, g: 0.44, b: 0.5, a: 0.85}
+  barFillColorHigh: {r: 0.55, g: 0.4, b: 0.38, a: 0.85}
+  panelBackgroundColor: {r: 0.02, g: 0.02, b: 0.025, a: 0.82}
+  scoreTransitionDuration: 1.5
   fadeInDuration: 1.5
   fadeOutDuration: 1
+  guidancePhaseA: observe the field
+  guidancePhaseB: "move cursor  \xB7  hold to act"
+  guidancePhaseC1: "1   SCAN  \u2014  hold to suppress movement"
+  guidancePhaseC2: "2   PULSE  \u2014  instant burst, 8s cooldown"
+  guidancePhaseC3: "3   LOCK  \u2014  pin a cluster, 14s cooldown"
+  guidanceFontSize: 16
+  guidanceMaxAlpha: 0.28
+  revelationLine1: you have been managing crowd suppression
+  revelationLine2: every point of coherence was a dispersal
+  revelationFontSize: 18
+  revelationMaxAlpha: 0.8
 --- !u!1 &1382237302
 GameObject:
   m_ObjectHideFlags: 0
@@ -418,7 +427,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ad3303106091d3a4e967f2e92fc8140c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  flowSimulation: {fileID: 0}
+  flowSimulation: {fileID: 1382237305}
   agentMesh: {fileID: 0}
   agentMaterial: {fileID: 0}
   agentSize: 0.25
@@ -429,8 +438,8 @@ MonoBehaviour:
   saturation: 0.85
   brightness: 0.95
   useTurbulenceColoring: 1
-  normalAgentColor: {r: 0.4, g: 0.4, b: 0.45, a: 0.7}
-  dampenedAgentColor: {r: 0.5, g: 0.7, b: 0.9, a: 0.7}
+  normalAgentColor: {r: 0.28, g: 0.28, b: 0.3, a: 0.55}
+  dampenedAgentColor: {r: 0.42, g: 0.46, b: 0.52, a: 0.65}
   fallbackColor: {r: 0.9, g: 0.9, b: 0.9, a: 0.6}
 --- !u!114 &1382237305
 MonoBehaviour:
@@ -448,7 +457,7 @@ MonoBehaviour:
   worldHeight: 60
   targetAspectRatio: 1.778
   moveSpeed: 1
-  baseWanderStrength: 0.3
+  baseWanderStrength: 0.05
   turbulentWanderStrength: 2.5
   turnSpeed: 5
   dampeningRecoveryRate: 0.5
@@ -467,12 +476,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 29b2ba9c6df91fe41a99972f16b0552e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  flowSimulation: {fileID: 0}
+  flowSimulation: {fileID: 1382237305}
   gridResolution: 256
   temporalSmoothing: 5
   flowMaterial: {fileID: 0}
   velocityScale: 3
-  saturationMin: 0.2
+  saturationMin: 0
   saturationMax: 1
   valueMin: 0.05
   valueMax: 1
@@ -495,7 +504,7 @@ MonoBehaviour:
   enableRandomEvents: 1
   minEventInterval: 6
   maxEventInterval: 15
-  initialDelay: 10
+  initialDelay: 40
   maxSimultaneousEvents: 3
   randomEventCutoff: 240
   minRadius: 5
@@ -566,6 +575,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1718674881}
   - component: {fileID: 1718674880}
+  - component: {fileID: 1718674882}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -613,6 +623,22 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1718674882
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1718674879}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c4422f8beedf6f14aa5dc4e6d3861ef7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  consoleSceneName: Console
+  fadeInDuration: 0.25
+  fadeOutDuration: 0.4
+  customFont: {fileID: 11400000, guid: 0ec5e21297d14354a971e9a96f24c2ba, type: 2}
 --- !u!1 &1783634599
 GameObject:
   m_ObjectHideFlags: 0

@@ -24,8 +24,8 @@ public class TurbulentEventScheduler : MonoBehaviour
     [Tooltip("Maximum time between random events")]
     public float maxEventInterval = 15f;
     
-    [Tooltip("Delay before first event")]
-    public float initialDelay = 10f;
+    [Tooltip("Delay before first random event — keep ≥40s so the scripted tutorial event at t=10s has breathing room")]
+    public float initialDelay = 40f;
     
     [Tooltip("Maximum simultaneous random events")]
     public int maxSimultaneousEvents = 3;
@@ -126,11 +126,13 @@ public class TurbulentEventScheduler : MonoBehaviour
         float dt = Time.deltaTime;
         simulationTime += dt;
         
-        // Update difficulty
+        // Update difficulty — ramp starts after the random-event window opens
+        // so the tutorial scripted events play at their designed base strength
         if (scaleDifficulty)
         {
+            float rampableTime = Mathf.Max(0f, simulationTime - initialDelay);
             currentDifficulty = Mathf.Min(
-                1f + simulationTime * difficultyRamp,
+                1f + rampableTime * difficultyRamp,
                 maxDifficultyMultiplier
             );
         }

@@ -169,7 +169,7 @@ public class AgentRenderer : MonoBehaviour
 
         // Base gray for organized flow — dim, barely visible
         float grayValue = Mathf.Lerp(0.18f, 0.40f, speedRatio);
-        Color organizedColor = new Color(grayValue, grayValue, grayValue * 1.04f, agentOpacity);
+        Color organizedColor = new Color(grayValue, grayValue, grayValue, agentOpacity);
 
         // Pattern-specific colors — desaturated, dim, hollow tints matching menu palette
         // 1=Circular, 2=Scatter, 3=Vortex, 4=Wave, 5=Oscillation, 6=Cluster

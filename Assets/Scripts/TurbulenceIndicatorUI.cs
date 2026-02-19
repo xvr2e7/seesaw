@@ -91,8 +91,11 @@ public class TurbulenceIndicatorUI : MonoBehaviour
 
         labelStyle = new GUIStyle(GUI.skin.label)
         {
-            fontSize = 12
+            fontSize  = 10,
+            fontStyle = FontStyle.Normal,
+            alignment = TextAnchor.MiddleLeft
         };
+        labelStyle.normal.textColor = new Color(0.32f, 0.34f, 0.38f, 0.80f);
 
         stylesInitialized = true;
     }
@@ -366,58 +369,87 @@ public class TurbulenceIndicatorUI : MonoBehaviour
         }
     }
 
+    private bool isPaused = false;
+    public void SetPaused(bool paused) { isPaused = paused; }
+
     void OnGUI()
     {
+        if (isPaused) return;
         InitializeStyles();
 
         // Draw mini-map radar
         DrawEventRadar();
     }
 
+    // Per-pattern colors for minimap blips (muted, console-palette)
+    static readonly Color BlipCircular    = new Color(0.40f, 0.62f, 0.72f, 1f); // cool blue
+    static readonly Color BlipScatter     = new Color(0.72f, 0.46f, 0.38f, 1f); // warm red-orange
+    static readonly Color BlipVortex      = new Color(0.60f, 0.44f, 0.72f, 1f); // muted violet
+    static readonly Color BlipWave        = new Color(0.42f, 0.68f, 0.52f, 1f); // muted green
+    static readonly Color BlipOscillation = new Color(0.74f, 0.68f, 0.36f, 1f); // amber
+    static readonly Color BlipCluster     = new Color(0.58f, 0.58f, 0.62f, 1f); // neutral gray
+
+    static Color PatternColor(TurbulenceEvent.PatternType p)
+    {
+        switch (p)
+        {
+            case TurbulenceEvent.PatternType.Circular:    return BlipCircular;
+            case TurbulenceEvent.PatternType.Scatter:     return BlipScatter;
+            case TurbulenceEvent.PatternType.Vortex:      return BlipVortex;
+            case TurbulenceEvent.PatternType.Wave:        return BlipWave;
+            case TurbulenceEvent.PatternType.Oscillation: return BlipOscillation;
+            case TurbulenceEvent.PatternType.Cluster:     return BlipCluster;
+            default:                                      return BlipCluster;
+        }
+    }
+
     void DrawEventRadar()
     {
         if (eventScheduler == null || cameraController == null) return;
 
-        // Mini radar — top-right corner, minimal monochrome
-        float radarSize = 140f;
-        float radarX = screenWidth - radarSize - 20f;
-        float radarY = 20f;
+        // Radar panel — top-right corner, 260×260 square
+        float radarSize   = 260f;
+        float panelWidth  = radarSize;
+        float panelHeight = radarSize;
+        float radarX      = screenWidth  - panelWidth  - 20f;
+        float radarY      = 20f;
 
-        // Background — near-black matching console
-        GUI.color = new Color(0.02f, 0.02f, 0.025f, 0.88f);
-        GUI.DrawTexture(new Rect(radarX, radarY, radarSize, radarSize), Texture2D.whiteTexture);
+        // Panel background
+        GUI.color = new Color(0.02f, 0.02f, 0.025f, 0.90f);
+        GUI.DrawTexture(new Rect(radarX, radarY, panelWidth, panelHeight), Texture2D.whiteTexture);
 
-        // Border — single-pixel, dim cool-gray
-        GUI.color = new Color(0.22f, 0.24f, 0.27f, 0.7f);
+        // Panel border — single-pixel cool-gray
+        GUI.color = new Color(0.22f, 0.24f, 0.27f, 0.75f);
         float bw = 1f;
-        GUI.DrawTexture(new Rect(radarX,                       radarY,                        radarSize, bw), Texture2D.whiteTexture);
-        GUI.DrawTexture(new Rect(radarX,                       radarY + radarSize - bw,       radarSize, bw), Texture2D.whiteTexture);
-        GUI.DrawTexture(new Rect(radarX,                       radarY,                        bw, radarSize), Texture2D.whiteTexture);
-        GUI.DrawTexture(new Rect(radarX + radarSize - bw,      radarY,                        bw, radarSize), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(radarX,                        radarY,                         panelWidth, bw), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(radarX,                        radarY + panelHeight - bw,      panelWidth, bw), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(radarX,                        radarY,                         bw, panelHeight), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(radarX + panelWidth - bw,      radarY,                         bw, panelHeight), Texture2D.whiteTexture);
 
         Vector2 worldSize = flowSimulation.WorldSize;
-        Vector2 radarCenter = new Vector2(radarX + radarSize * 0.5f, radarY + radarSize * 0.5f + 10f);
-        float radarScale = (radarSize - 30f) / Mathf.Max(worldSize.x, worldSize.y);
+        // Map the world origin to the center of the panel
+        Vector2 radarCenter = new Vector2(radarX + panelWidth * 0.5f, radarY + panelHeight * 0.5f);
+        float   radarScale  = (radarSize - 20f) / Mathf.Max(worldSize.x, worldSize.y);
 
-        // Camera viewport — very subtle fill
+        // Camera viewport — subtle fill
         Rect visibleBounds = cameraController.GetVisibleBounds();
-        GUI.color = new Color(0.20f, 0.22f, 0.25f, 0.18f);
+        GUI.color = new Color(0.20f, 0.22f, 0.26f, 0.22f);
 
-        float viewX = radarCenter.x + visibleBounds.center.x * radarScale - visibleBounds.width * radarScale * 0.5f;
+        float viewX = radarCenter.x + visibleBounds.center.x * radarScale - visibleBounds.width  * radarScale * 0.5f;
         float viewY = radarCenter.y - visibleBounds.center.y * radarScale - visibleBounds.height * radarScale * 0.5f;
-        float viewW = visibleBounds.width * radarScale;
+        float viewW = visibleBounds.width  * radarScale;
         float viewH = visibleBounds.height * radarScale;
 
         GUI.DrawTexture(new Rect(viewX, viewY, viewW, viewH), Texture2D.whiteTexture);
 
-        // Viewport border — single pixel, slightly brighter gray
-        GUI.color = new Color(0.32f, 0.35f, 0.38f, 0.55f);
-        GUI.DrawTexture(new Rect(viewX,          viewY,          viewW, 1), Texture2D.whiteTexture);
-        GUI.DrawTexture(new Rect(viewX,          viewY + viewH,  viewW, 1), Texture2D.whiteTexture);
-        GUI.DrawTexture(new Rect(viewX,          viewY,          1, viewH), Texture2D.whiteTexture);
-        GUI.DrawTexture(new Rect(viewX + viewW,  viewY,          1, viewH), Texture2D.whiteTexture);
+        // Viewport border — slightly brighter gray
+        GUI.color = new Color(0.38f, 0.42f, 0.46f, 0.65f);
+        GUI.DrawTexture(new Rect(viewX,         viewY,          viewW, 1), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(viewX,         viewY + viewH,  viewW, 1), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(viewX,         viewY,          1, viewH), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(viewX + viewW, viewY,          1, viewH), Texture2D.whiteTexture);
 
-        // Draw events as small blips — desaturated, dim
+        // Draw events as color-coded blips
         var activeEvents = eventScheduler.GetActiveEvents();
         foreach (var evt in activeEvents)
         {
@@ -426,32 +458,21 @@ public class TurbulenceIndicatorUI : MonoBehaviour
             float blipX = radarCenter.x + evt.position.x * radarScale;
             float blipY = radarCenter.y - evt.position.y * radarScale;
 
-            float blipSize = 3f + evt.currentIntensity * 4f;
-            float pulse = 0.45f + 0.55f * Mathf.Sin(Time.time * 3f + evt.position.x * 0.1f);
+            float pulse    = 0.50f + 0.50f * Mathf.Sin(Time.time * 2.8f + evt.position.x * 0.15f);
+            float blipSize = 5f + evt.currentIntensity * 5f;
 
-            bool inView = visibleBounds.Contains(evt.position);
+            Color baseColor = PatternColor(evt.pattern);
+            bool  inView    = visibleBounds.Contains(evt.position);
+            float baseAlpha = inView ? 0.65f : 0.88f;
 
-            if (inView)
-            {
-                // In-view: cool gray, barely visible
-                GUI.color = new Color(0.48f, 0.52f, 0.58f, 0.55f * pulse);
-            }
-            else
-            {
-                // Off-screen: slightly warm gray, subtly more prominent
-                GUI.color = new Color(0.60f, 0.50f, 0.44f, 0.65f * (0.6f + pulse * 0.4f));
-            }
-
+            GUI.color = new Color(baseColor.r, baseColor.g, baseColor.b, baseAlpha * (0.55f + pulse * 0.45f));
             GUI.DrawTexture(new Rect(blipX - blipSize * 0.5f, blipY - blipSize * 0.5f, blipSize, blipSize), Texture2D.whiteTexture);
 
-            // Crosshair ring for off-screen events (thin, minimal)
-            if (!inView)
-            {
-                GUI.color = new Color(0.55f, 0.46f, 0.40f, (1f - pulse) * 0.35f);
-                float ringSize = blipSize + pulse * 6f;
-                GUI.DrawTexture(new Rect(blipX - ringSize * 0.5f, blipY - 0.5f, ringSize, 1f), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(blipX - 0.5f, blipY - ringSize * 0.5f, 1f, ringSize), Texture2D.whiteTexture);
-            }
+            // Halo ring (fades opposite to pulse so it breathes outward)
+            float haloSize = blipSize + (1f - pulse) * 8f;
+            GUI.color = new Color(baseColor.r, baseColor.g, baseColor.b, (1f - pulse) * 0.30f);
+            GUI.DrawTexture(new Rect(blipX - haloSize * 0.5f, blipY - 0.5f,           haloSize, 1f),      Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(blipX - 0.5f,            blipY - haloSize * 0.5f, 1f,      haloSize), Texture2D.whiteTexture);
         }
 
         GUI.color = Color.white;

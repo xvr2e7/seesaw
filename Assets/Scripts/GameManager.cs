@@ -76,6 +76,14 @@ public class GameManager : MonoBehaviour
     public event Action OnSessionEnd;
     public event Action<GameState> OnStateChanged;
     public event Action<float> OnScoreCalculated;
+
+    // ─── Pause / Save keys ────────────────────────────────────────────────────
+    private const string PREF_HAS_SAVE      = "HasSavedGame";
+    private const string PREF_SESSION_TIME  = "SavedSessionTime";
+    private const string PREF_ACC_DIV       = "SavedAccDivergence";
+    private const string PREF_DIV_SAMPLES   = "SavedDivergenceSamples";
+    private const string PREF_PEAK_DIV      = "SavedPeakDivergence";
+    private const string PREF_LAST_SAMPLE   = "SavedLastSampleTime";
     
     // Public accessors
     public GameState CurrentState => currentState;
@@ -85,6 +93,30 @@ public class GameManager : MonoBehaviour
     public float FinalScore => finalScore;
     public bool IsPlaying => currentState == GameState.Playing;
     public SessionStatistics Statistics => sessionStats;
+
+    public static bool HasSavedGame() => PlayerPrefs.GetInt("HasSavedGame", 0) == 1;
+
+    /// <summary>Snapshot current session progress to PlayerPrefs.</summary>
+    public static void SavePauseState()
+    {
+        // Find the instance and persist its runtime values
+        var gm = FindObjectOfType<GameManager>();
+        if (gm == null) return;
+        PlayerPrefs.SetInt   ("HasSavedGame",          1);
+        PlayerPrefs.SetFloat ("SavedSessionTime",      gm.sessionTime);
+        PlayerPrefs.SetFloat ("SavedAccDivergence",    gm.accumulatedDivergence);
+        PlayerPrefs.SetInt   ("SavedDivergenceSamples",gm.divergenceSamples);
+        PlayerPrefs.SetFloat ("SavedPeakDivergence",   gm.peakDivergence);
+        PlayerPrefs.SetFloat ("SavedLastSampleTime",   gm.lastSampleTime);
+        PlayerPrefs.Save();
+    }
+
+    /// <summary>Clear saved game (called when a new game is started or session completes).</summary>
+    public static void ClearSavedGame()
+    {
+        PlayerPrefs.DeleteKey("HasSavedGame");
+        PlayerPrefs.Save();
+    }
     
     void Awake()
     {
@@ -163,23 +195,36 @@ public class GameManager : MonoBehaviour
     
     void StartSession()
     {
-        sessionTime = 0f;
-        accumulatedDivergence = 0f;
-        divergenceSamples = 0;
-        peakDivergence = 0f;
-        lastSampleTime = 0f;
+        // Restore snapshot if one exists (player resumed from pause menu)
+        if (PlayerPrefs.GetInt("HasSavedGame", 0) == 1)
+        {
+            sessionTime           = PlayerPrefs.GetFloat("SavedSessionTime",       0f);
+            accumulatedDivergence = PlayerPrefs.GetFloat("SavedAccDivergence",     0f);
+            divergenceSamples     = PlayerPrefs.GetInt  ("SavedDivergenceSamples", 0);
+            peakDivergence        = PlayerPrefs.GetFloat("SavedPeakDivergence",    0f);
+            lastSampleTime        = PlayerPrefs.GetFloat("SavedLastSampleTime",    0f);
+            Debug.Log($"[GameManager] Resuming saved session at {sessionTime:F1}s");
+        }
+        else
+        {
+            sessionTime = 0f;
+            accumulatedDivergence = 0f;
+            divergenceSamples = 0;
+            peakDivergence = 0f;
+            lastSampleTime = 0f;
+        }
+
         sessionActive = true;
-        
-        // Initialize session statistics
+
         sessionStats = new SessionStatistics
         {
-            startTime = Time.time,
-            sessionDuration = 0f
+            startTime       = Time.time,
+            sessionDuration = sessionTime
         };
-        
+
         SetState(GameState.Playing);
         OnSessionStart?.Invoke();
-        
+
         Debug.Log("[GameManager] Session started");
     }
     
@@ -262,9 +307,10 @@ public class GameManager : MonoBehaviour
     void EndSession(string reason)
     {
         if (!sessionActive) return;
-        
+
         sessionActive = false;
-        
+        ClearSavedGame(); // session finished naturally — no save needed
+
         // Calculate final score
         CalculateFinalScore();
         
@@ -331,6 +377,12 @@ public class GameManager : MonoBehaviour
         if (gameStateUI != null)
         {
             gameStateUI.OnGameStateChanged(newState);
+        }
+
+        // Hide tool bar during documentary phase
+        if (playerTool != null)
+        {
+            playerTool.SetDocumentaryPhase(newState == GameState.Complete);
         }
     }
     

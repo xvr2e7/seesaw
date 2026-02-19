@@ -26,7 +26,7 @@ public class FlowVisualizer : MonoBehaviour
     public float velocityScale = 3.0f;
     [Header("Appearance")]
     [Range(0f, 1f)]
-    public float saturationMin = 0.2f;
+    public float saturationMin = 0.0f;
     
     [Range(0f, 1f)]
     public float saturationMax = 1.0f;
@@ -221,7 +221,7 @@ public class FlowVisualizer : MonoBehaviour
         Vector2[] positions = flowSimulation.Positions;
         Vector2[] velocities = flowSimulation.Velocities;
         int agentCount = flowSimulation.AgentCount;
-        
+
         // Accumulate velocities into grid cells with bilinear splatting
         for (int i = 0; i < agentCount; i++)
         {
@@ -305,7 +305,7 @@ public class FlowVisualizer : MonoBehaviour
                 Mathf.Clamp01((blended.x / baseSpeed) * 0.5f + 0.5f),
                 Mathf.Clamp01((blended.y / baseSpeed) * 0.5f + 0.5f),
                 mag / baseSpeed, // Store raw magnitude ratio in Blue
-                1f // Alpha unused for now, or could store density
+                1f               // Alpha unused
             );
         }
         

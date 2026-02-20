@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using UnityEngine.Video;
 using System.Collections;
 using TMPro;
 
@@ -39,23 +40,28 @@ public class ConsoleController : MonoBehaviour
 
     // Artist Statement
     private const string ARTIST_STATEMENT =
-        "Work in progress.\n\n" +
-        "Laminar flow is the condition in which fluid moves in smooth, parallel layers " +
-        "without disruption between them. This work takes that image as a lens: " +
-        "the suppression of collective movement as the management of flow.\n\n" +
+        "A work in progress. Thanks for play-testing.\n\n" +
+        "See/Saw is an interactive experience that reveals the operational layer of computer vision algorithms." +
+        "You become complicit in the act of automated perception and control.\n\n" +
+        "The interface exposes the normally hidden apparatus of machine vision: " +
+        "detection grids, classification labels, and the mechanical process of imposing order on chaos.\n\n" +
         "The simulation you inhabit places you in the role of an operator whose task " +
-        "is convergence — the drawing of dispersed motion into coherence. " +
+        "is convergence — the drawing of dispersed motion into coherence.\n\n" +
         "What counts as order? What makes a gathering legible as threat?\n\n" +
         "See/Saw offers no answer. It holds the question open.";
 
     private const string CONTROLS_TEXT =
-        "MOUSE         aim the convergence field\n" +
+        "Colored disruptions appear in the flow. Your job is to suppress them before they spread.\n\n" +
+        "Move your cursor over a disruption. Hold LEFT CLICK to dampen it.\n" +
+        "Watch the agents return to gray. That is the goal.\n\n" +
+        "MOUSE         aim the detection field\n" +
         "LEFT CLICK    activate selected tool\n" +
-        "SCROLL        adjust field radius\n" +
+        "SCROLL        resize detection area\n" +
         "ESC           pause\n\n" +
-        "1  SCAN        hold to dampen turbulence\n" +
-        "2  PULSE       instant burst — 8s cooldown\n" +
-        "3  LOCK        freeze agents — 14s cooldown";
+        "1  SCAN        hold to suppress  ·  limited energy, recharges\n" +
+        "2  PULSE       instant burst     ·  8s cooldown, no energy cost\n" +
+        "3  LOCK        freeze a cluster  ·  14s cooldown, small radius\n\n" +
+        "The divergence bar (top-left) measures disorder. Keep it low.";
 
     private const string CREDITS_TEXT =
         "Concept & Design\n" +
@@ -76,6 +82,8 @@ public class ConsoleController : MonoBehaviour
     private GameObject      subScreenObj;
     private TextMeshProUGUI subScreenTitle;
     private TextMeshProUGUI subScreenBody;
+    private GameObject      subScreenTitleGO;
+    private GameObject      subScreenDividerGO;
 
     // Menu items (Main screen) — built dynamically in CreateMainScreen
     private string[]          menuLabels;
@@ -131,6 +139,25 @@ public class ConsoleController : MonoBehaviour
     private static bool returningFromGame = false;
     public  static void SetReturningFromGame() => returningFromGame = true;
 
+    // Right column (shown after documentary)
+    private bool           showRightColumn = false;
+    private GameObject     rightColumnObj;
+    private TextMeshProUGUI bestRunText;      // shows score on hover
+    private TextMeshProUGUI watchText;
+    private int            rightHoveredItem  = -1; // 0=BEST RUN, 1=WATCH
+    private float[]        rightItemBrightness = new float[2];
+    private bool           rightColumnVisible  = false;
+
+    // In-console video playback screen
+    [Header("Video")]
+    public string videoFileName = "laminar_demo.mp4";
+    private GameObject     videoScreenObj;
+    private RawImage       videoRawImage;
+    private RenderTexture  videoRT;
+    private VideoPlayer    videoPlayer;
+    private AudioSource    videoAudio;
+    private bool           isPlayingVideo = false;
+
     // Font (resolved in Start)
     private TMP_FontAsset resolvedFont;
 
@@ -146,22 +173,28 @@ public class ConsoleController : MonoBehaviour
     {
         ResolveFont();
         SetupAudio();
-        CreateUI();
 
-        Cursor.visible = false;
+        // Show right column if the player has ever completed a run
+        showRightColumn = GameManager.HasBestScore();
 
         if (returningFromDocumentary)
         {
             returningFromDocumentary = false;
+            CreateUI();
+            Cursor.visible = false;
             StartCoroutine(FadeIn(fadeInDuration));
         }
         else if (returningFromGame)
         {
             returningFromGame = false;
+            CreateUI();
+            Cursor.visible = false;
             StartCoroutine(FadeIn(fadeInDuration));
         }
         else
         {
+            CreateUI();
+            Cursor.visible = false;
             StartCoroutine(IntroSequence());
         }
     }
@@ -170,6 +203,11 @@ public class ConsoleController : MonoBehaviour
     {
         if (Input.GetKeyDown(KeyCode.Escape))
         {
+            if (isPlayingVideo)
+            {
+                StartCoroutine(StopVideoAndReturn());
+                return;
+            }
             if (currentScreen != MenuScreen.Main)
                 ShowScreen(MenuScreen.Main);
             else
@@ -188,6 +226,11 @@ public class ConsoleController : MonoBehaviour
                 UpdateMenuHover();
                 UpdateMenuClick();
                 UpdateVolumeSlider();
+                if (rightColumnVisible)
+                {
+                    UpdateRightColumnHover();
+                    UpdateRightColumnClick();
+                }
             }
             else
             {
@@ -266,6 +309,9 @@ public class ConsoleController : MonoBehaviour
         subScreenObj = CreateSubScreen(canvasGO.transform);
         subScreenObj.SetActive(false);
 
+        // Video playback screen (hidden until WATCH is clicked)
+        CreateVideoScreen(canvasGO.transform);
+
         // Procedural cursor (topmost)
         CreateCursor(canvasGO.transform);
 
@@ -277,6 +323,53 @@ public class ConsoleController : MonoBehaviour
         cursorRect.parent.SetAsLastSibling();
 
         Canvas.ForceUpdateCanvases();
+    }
+
+    void CreateVideoScreen(Transform parent)
+    {
+        videoScreenObj = new GameObject("VideoScreen");
+        videoScreenObj.transform.SetParent(parent, false);
+        var cg = videoScreenObj.AddComponent<CanvasGroup>();
+        cg.alpha = 0f;
+        cg.blocksRaycasts = false;
+        var bgImg = videoScreenObj.AddComponent<Image>();
+        bgImg.color = Color.black;
+        bgImg.raycastTarget = true;
+        var bgRect = videoScreenObj.GetComponent<RectTransform>();
+        bgRect.anchorMin = Vector2.zero;
+        bgRect.anchorMax = Vector2.one;
+        bgRect.offsetMin = Vector2.zero;
+        bgRect.offsetMax = Vector2.zero;
+
+        // RawImage to display the render texture
+        var rawGO  = new GameObject("VideoImage");
+        rawGO.transform.SetParent(videoScreenObj.transform, false);
+        videoRawImage = rawGO.AddComponent<RawImage>();
+        videoRawImage.color = Color.white;
+        videoRawImage.raycastTarget = false;
+        var rawRect = rawGO.GetComponent<RectTransform>();
+        rawRect.anchorMin = Vector2.zero;
+        rawRect.anchorMax = Vector2.one;
+        rawRect.offsetMin = Vector2.zero;
+        rawRect.offsetMax = Vector2.zero;
+
+        // VideoPlayer
+        var vpGO    = new GameObject("VideoPlayer");
+        vpGO.transform.SetParent(videoScreenObj.transform, false);
+        videoPlayer = vpGO.AddComponent<VideoPlayer>();
+        videoPlayer.playOnAwake     = false;
+        videoPlayer.isLooping       = false;
+        videoPlayer.renderMode      = VideoRenderMode.RenderTexture;
+        videoPlayer.audioOutputMode = VideoAudioOutputMode.AudioSource;
+        videoAudio  = vpGO.AddComponent<AudioSource>();
+        videoAudio.playOnAwake = false;
+        videoPlayer.SetTargetAudioSource(0, videoAudio);
+        videoPlayer.loopPointReached += _ => StartCoroutine(StopVideoAndReturn());
+        string path = System.IO.Path.Combine(Application.streamingAssetsPath, videoFileName);
+        videoPlayer.url = path;
+        videoPlayer.Prepare();
+
+        videoScreenObj.SetActive(false);
     }
 
     private Texture2D sunGlowTexture;
@@ -588,10 +681,100 @@ public class ConsoleController : MonoBehaviour
         verRect.anchoredPosition = new Vector2(30f, 22f);
         verRect.sizeDelta        = new Vector2(200f, 24f);
 
+        // Right column — persistent once player has completed a run
+        if (showRightColumn)
+            CreateRightColumn(go.transform);
+
         return go;
     }
 
-    void CreateDivider(Transform parent, Vector2 anchoredPos, float width)
+    // Right column layout — mirrored from the left:
+    // Left column: anchor (0,1), x=160 from left edge, width 280, text left-aligned
+    // Right column: anchor (1,1), x=-160 from right edge, width 280, text right-aligned
+    private const float RC_MARGIN   = -160f; // anchoredPosition x from right anchor
+    private const float RC_WIDTH    = 280f;
+    private const float RC_DIV_Y    = -224f; // same y as left divider
+    private const float RC_ITEM0_Y  = -284f; // BEST RUN — same y as left item 0
+    private const float RC_ITEM1_Y  = -336f; // WATCH    — same y as left item 1
+
+    void CreateRightColumn(Transform parent)
+    {
+        // Divider — right edge at x=-160, extends leftward 280px, same y as left divider
+        var divGO  = new GameObject("RightColumnDivider");
+        divGO.transform.SetParent(parent, false);
+        var divImg = divGO.AddComponent<Image>();
+        divImg.color = new Color(0.22f, 0.24f, 0.27f, 1f);
+        divImg.raycastTarget = false;
+        var divRect = divGO.GetComponent<RectTransform>();
+        divRect.anchorMin        = new Vector2(1f, 1f);
+        divRect.anchorMax        = new Vector2(1f, 1f);
+        divRect.pivot            = new Vector2(1f, 0.5f); // right-anchored
+        divRect.anchoredPosition = new Vector2(RC_MARGIN, RC_DIV_Y);
+        divRect.sizeDelta        = new Vector2(RC_WIDTH, 1f);
+
+        // Row 0 — BEST RUN + inline score (fades in on hover)
+        bestRunText = CreateRightItem(parent, "BEST RUN", RC_ITEM0_Y);
+
+        // Score — sits to the LEFT of the label (in screen space: label is right-aligned,
+        // score appears as a dim suffix fading in on hover, right-aligned in same row)
+        var scoreGO  = new GameObject("BestScore");
+        scoreGO.transform.SetParent(parent, false);
+        var scoreTMP = scoreGO.AddComponent<TextMeshProUGUI>();
+        float best   = GameManager.GetBestScore();
+        scoreTMP.text             = GameManager.HasBestScore()
+            ? $"{Mathf.RoundToInt(best * 100f):D3}"
+            : "—";
+        scoreTMP.font             = resolvedFont;
+        scoreTMP.fontSize         = 14f;
+        scoreTMP.color            = new Color(0.38f, 0.55f, 0.45f, 0f); // invisible until hover
+        scoreTMP.characterSpacing = 2f;
+        scoreTMP.alignment        = TextAlignmentOptions.Right;
+        scoreTMP.raycastTarget    = false;
+        var scoreRect = scoreGO.GetComponent<RectTransform>();
+        // Score appears just left of the label.
+        // Label: pivot right, anchoredPos (RC_MARGIN, y), width RC_WIDTH
+        //   → label's left screen edge is at RC_MARGIN - RC_WIDTH from the right anchor
+        // Score: pivot right, right edge flush with label's left edge
+        scoreRect.anchorMin        = new Vector2(1f, 1f);
+        scoreRect.anchorMax        = new Vector2(1f, 1f);
+        scoreRect.pivot            = new Vector2(1f, 0.5f);
+        scoreRect.anchoredPosition = new Vector2(RC_MARGIN - RC_WIDTH - 10f, RC_ITEM0_Y);
+        scoreRect.sizeDelta        = new Vector2(80f, 40f);
+        _bestScoreTMP = scoreTMP;
+
+        // Row 1 — WATCH
+        watchText = CreateRightItem(parent, "WATCH", RC_ITEM1_Y);
+
+        rightColumnVisible = true;
+        rightItemBrightness[0] = 0f;
+        rightItemBrightness[1] = 0f;
+    }
+
+    private TextMeshProUGUI _bestScoreTMP;
+
+    // Items are right-anchored, right-aligned, right edge at x = RC_MARGIN from right
+    TextMeshProUGUI CreateRightItem(Transform parent, string label, float anchoredY)
+    {
+        var go   = new GameObject($"RightItem_{label}");
+        go.transform.SetParent(parent, false);
+        var tmp  = go.AddComponent<TextMeshProUGUI>();
+        tmp.text             = label;
+        tmp.font             = resolvedFont;
+        tmp.fontSize         = 18f;
+        tmp.color            = new Color(0.45f, 0.47f, 0.5f, 1f);
+        tmp.characterSpacing = 3f;
+        tmp.alignment        = TextAlignmentOptions.Right;
+        tmp.raycastTarget    = true;
+        var rect = go.GetComponent<RectTransform>();
+        rect.anchorMin        = new Vector2(1f, 1f);
+        rect.anchorMax        = new Vector2(1f, 1f);
+        rect.pivot            = new Vector2(1f, 0.5f);
+        rect.anchoredPosition = new Vector2(RC_MARGIN, anchoredY);
+        rect.sizeDelta        = new Vector2(RC_WIDTH, 40f);
+        return tmp;
+    }
+
+    GameObject CreateDivider(Transform parent, Vector2 anchoredPos, float width)
     {
         var go   = new GameObject("Divider");
         go.transform.SetParent(parent, false);
@@ -604,6 +787,7 @@ public class ConsoleController : MonoBehaviour
         rect.pivot            = new Vector2(0f, 0.5f);
         rect.anchoredPosition = anchoredPos;
         rect.sizeDelta        = new Vector2(width, 1f);
+        return go;
     }
 
     TextMeshProUGUI CreateMenuItem(Transform parent, string label, Vector2 anchoredPos, int index)
@@ -663,6 +847,7 @@ public class ConsoleController : MonoBehaviour
         // Title
         var titleGO  = new GameObject("SubTitle");
         titleGO.transform.SetParent(go.transform, false);
+        subScreenTitleGO = titleGO;
         subScreenTitle = titleGO.AddComponent<TextMeshProUGUI>();
         subScreenTitle.font      = resolvedFont;
         subScreenTitle.fontSize  = 26f;
@@ -678,7 +863,7 @@ public class ConsoleController : MonoBehaviour
         titleRect.sizeDelta        = new Vector2(-200f, 50f);
 
         // Divider
-        CreateDivider(go.transform, new Vector2(160f, -182f), 360f);
+        subScreenDividerGO = CreateDivider(go.transform, new Vector2(160f, -182f), 360f);
 
         // Body text
         var bodyGO  = new GameObject("SubBody");
@@ -974,6 +1159,106 @@ public class ConsoleController : MonoBehaviour
         }
     }
 
+    // ─── Right Column ─────────────────────────────────────────────────────────
+
+    void UpdateRightColumnHover()
+    {
+        var items = new TextMeshProUGUI[] { bestRunText, watchText };
+        rightHoveredItem = -1;
+
+        for (int i = 0; i < items.Length; i++)
+        {
+            if (items[i] == null) continue;
+            var rect = items[i].GetComponent<RectTransform>();
+            Vector2 local;
+            if (RectTransformUtility.ScreenPointToLocalPointInRectangle(rect, Input.mousePosition, null, out local))
+            {
+                if (rect.rect.Contains(local))
+                    rightHoveredItem = i;
+            }
+        }
+
+        float dt = Time.deltaTime * 6f;
+        for (int i = 0; i < items.Length; i++)
+        {
+            float target = (i == rightHoveredItem) ? 1f : 0f;
+            rightItemBrightness[i] = Mathf.Lerp(rightItemBrightness[i], target, dt);
+            items[i].color = Color.Lerp(
+                new Color(0.38f, 0.4f, 0.43f, 1f),
+                new Color(0.92f, 0.93f, 0.95f, 1f),
+                rightItemBrightness[i]);
+        }
+
+        // Fade score line in/out on BEST RUN hover
+        if (_bestScoreTMP != null)
+        {
+            float scoreTarget = (rightHoveredItem == 0) ? 1f : 0f;
+            Color c = _bestScoreTMP.color;
+            c.a = Mathf.Lerp(c.a, scoreTarget, Time.deltaTime * 6f);
+            _bestScoreTMP.color = c;
+        }
+    }
+
+    void UpdateRightColumnClick()
+    {
+        if (!Input.GetMouseButtonDown(0) || rightHoveredItem != 1) return;
+        StartCoroutine(PlayVideoCoroutine());
+    }
+
+    IEnumerator PlayVideoCoroutine()
+    {
+        if (isTransitioning || isPlayingVideo) yield break;
+        isTransitioning = true;
+
+        // Fade to black
+        yield return StartCoroutine(FadeOverlayTo(1f, fadeOutDuration));
+
+        // Build/resize render texture to match screen
+        if (videoRT != null) { videoRT.Release(); Object.Destroy(videoRT); }
+        videoRT = new RenderTexture(Screen.width, Screen.height, 0);
+        videoPlayer.targetTexture = videoRT;
+        videoRawImage.texture     = videoRT;
+
+        // Swap screens while black
+        mainScreenObj.SetActive(false);
+        videoScreenObj.SetActive(true);
+        var vcg = videoScreenObj.GetComponent<CanvasGroup>();
+        vcg.alpha = 1f;
+        vcg.blocksRaycasts = true;
+
+        isPlayingVideo = true;
+        videoPlayer.Play();
+
+        // Fade from black
+        yield return StartCoroutine(FadeOverlayTo(0f, fadeInDuration));
+
+        isTransitioning = false;
+    }
+
+    IEnumerator StopVideoAndReturn()
+    {
+        if (!isPlayingVideo) yield break;
+        isPlayingVideo  = false;
+        isTransitioning = true;
+
+        videoPlayer.Stop();
+
+        // Fade to black
+        yield return StartCoroutine(FadeOverlayTo(1f, fadeOutDuration));
+
+        // Swap back while black
+        var vcg = videoScreenObj.GetComponent<CanvasGroup>();
+        vcg.alpha = 0f;
+        vcg.blocksRaycasts = false;
+        videoScreenObj.SetActive(false);
+        mainScreenObj.SetActive(true);
+
+        // Fade in menu
+        yield return StartCoroutine(FadeOverlayTo(0f, fadeInDuration));
+
+        isTransitioning = false;
+    }
+
     // ─── Screen Switching ─────────────────────────────────────────────────────
 
     void ShowScreen(MenuScreen screen)
@@ -1024,6 +1309,9 @@ public class ConsoleController : MonoBehaviour
     {
         settingsRowObj.SetActive(false);
         subScreenBody.gameObject.SetActive(true);
+
+        if (subScreenTitleGO  != null) subScreenTitleGO.SetActive(true);
+        if (subScreenDividerGO != null) subScreenDividerGO.SetActive(true);
 
         switch (screen)
         {

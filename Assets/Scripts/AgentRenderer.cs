@@ -159,52 +159,51 @@ public class AgentRenderer : MonoBehaviour
     }
     
     /// <summary>
-    /// Turbulence-based coloring: matches flow field visualization
-    /// Gray when organized, pattern-specific color when turbulent
+    /// Turbulence-based coloring per GAMEPLAY_DESCRIPTION.md:
+    ///   - Slow agents: RGB(0.25, 0.25, 0.25) dark gray
+    ///   - Fast agents: RGB(0.65, 0.65, 0.65) medium gray
+    ///   - Pattern colors blended in via: pow(saturate((turbulence-0.05)/0.45), 0.5)
+    ///   - SCAN active: shift toward blue-tinted light gray RGB(0.7, 0.7, 0.75)
     /// </summary>
     Color GetTurbulenceBasedColor(Vector2 velocity, float turbulence, int pattern, float dampening, float maxSpeed)
     {
         float magnitude = velocity.magnitude;
         float speedRatio = Mathf.Clamp01(magnitude / maxSpeed);
 
-        // Base gray for organized flow — dim, barely visible
-        float grayValue = Mathf.Lerp(0.18f, 0.40f, speedRatio);
-        Color organizedColor = new Color(grayValue, grayValue, grayValue, agentOpacity);
+        // Base gray: slow=0.25 dark gray, fast=0.65 medium gray (doc spec)
+        float grayValue = Mathf.Lerp(0.25f, 0.65f, speedRatio);
+        Color grayColor = new Color(grayValue, grayValue, grayValue, agentOpacity);
 
-        // Pattern-specific colors — desaturated, dim, hollow tints matching menu palette
+        // Pattern-specific colors per doc spec (intentionally desaturated)
         // 1=Circular, 2=Scatter, 3=Vortex, 4=Wave, 5=Oscillation, 6=Cluster
-        Color patternColor = new Color(0.38f, 0.36f, 0.34f, agentOpacity); // Default
+        Color patternColor = grayColor; // default: no tint
 
         switch (pattern)
         {
-            case 1: patternColor = new Color(0.38f, 0.48f, 0.40f, agentOpacity); break; // Circular: dim sage
-            case 2: patternColor = new Color(0.50f, 0.36f, 0.34f, agentOpacity); break; // Scatter: dim rose
-            case 3: patternColor = new Color(0.42f, 0.38f, 0.48f, agentOpacity); break; // Vortex: dim lavender
-            case 4: patternColor = new Color(0.34f, 0.42f, 0.48f, agentOpacity); break; // Wave: dim slate-blue
-            case 5: patternColor = new Color(0.48f, 0.46f, 0.34f, agentOpacity); break; // Oscillation: dim straw
-            case 6: patternColor = new Color(0.40f, 0.40f, 0.42f, agentOpacity); break; // Cluster: cool gray
+            case 1: patternColor = new Color(0.40f, 0.75f, 0.50f, agentOpacity); break; // Circular: sage green
+            case 2: patternColor = new Color(0.85f, 0.45f, 0.45f, agentOpacity); break; // Scatter: dull rose
+            case 3: patternColor = new Color(0.65f, 0.50f, 0.75f, agentOpacity); break; // Vortex: muted lavender
+            case 4: patternColor = new Color(0.40f, 0.60f, 0.75f, agentOpacity); break; // Wave: slate blue
+            case 5: patternColor = new Color(0.80f, 0.75f, 0.35f, agentOpacity); break; // Oscillation: straw yellow
+            case 6: patternColor = new Color(0.55f, 0.55f, 0.60f, agentOpacity); break; // Cluster: cool gray
         }
 
-        // Modulate by speed
-        patternColor = Color.Lerp(patternColor * 0.5f, patternColor, speedRatio);
-
-        // Dampening shows as brighter gray (smoothing effect)
+        // SCAN dampening: shift toward blue-tinted light gray (doc: RGB 0.7, 0.7, 0.75)
         if (dampening > 0.2f)
         {
-            Color dampenedColor = Color.Lerp(
-                organizedColor,
-                new Color(0.7f, 0.7f, 0.75f, agentOpacity),
+            return Color.Lerp(
+                grayColor,
+                new Color(0.70f, 0.70f, 0.75f, agentOpacity),
                 dampening
             );
-            return dampenedColor;
         }
 
-        // Blend between organized (gray) and pattern color (turbulent) based on turbulence
-        float turbulenceThreshold = 0.05f;
-        float turbulenceFactor = Mathf.Clamp01((turbulence - turbulenceThreshold) / (0.5f - turbulenceThreshold));
-        turbulenceFactor = Mathf.Pow(turbulenceFactor, 0.5f);
+        // Blend gray → pattern color using doc formula:
+        // turbulenceFactor = pow(saturate((turbulence − 0.05) / 0.45), 0.5)
+        float t = Mathf.Clamp01((turbulence - 0.05f) / 0.45f);
+        float turbulenceFactor = Mathf.Pow(t, 0.5f);
 
-        return Color.Lerp(organizedColor, patternColor, turbulenceFactor);
+        return Color.Lerp(grayColor, patternColor, turbulenceFactor);
     }
 
     /// <summary>

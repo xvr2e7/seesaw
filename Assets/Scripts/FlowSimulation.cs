@@ -3,7 +3,7 @@ using UnityEngine;
 public class FlowSimulation : MonoBehaviour
 {
     [Header("Simulation Settings")]
-    public int agentCount = 800;
+    public int agentCount = 1000;
     
     public float worldHeight = 60f;
     public float targetAspectRatio = 1.778f; // 16:9

@@ -22,7 +22,7 @@ public class TurbulentEventScheduler : MonoBehaviour
     public float minEventInterval = 10f;
     
     [Tooltip("Maximum time between random events")]
-    public float maxEventInterval = 15f;
+    public float maxEventInterval = 20f;
     
     [Tooltip("Delay before first random event — keep ≥70s so the full scripted tutorial (t=10–65s) completes before random events start")]
     public float initialDelay = 70f;
@@ -149,13 +149,16 @@ public class TurbulentEventScheduler : MonoBehaviour
             UpdateRandomEvents();
         }
         
-        // Report active turbulence to FlowSimulation for scoring
+        // Report active turbulence to FlowSimulation for scoring.
+        // Only DIVERGENT patterns (Scatter, Oscillation, Cluster) contribute to divergence.
+        // Coherent patterns (Circular, Wave, Vortex) are organized — suppress them and
+        // you waste energy but gain nothing. See GAMEPLAY_DESCRIPTION.md.
         if (flowSimulation != null)
         {
             float totalActiveStrength = 0f;
             foreach(var evt in activeEvents)
             {
-                if (evt.isActive)
+                if (evt.isActive && IsDivergentPattern(evt.pattern))
                     totalActiveStrength += evt.strength * evt.currentIntensity;
             }
             flowSimulation.ReportTurbulence(totalActiveStrength);
@@ -409,14 +412,14 @@ public class TurbulentEventScheduler : MonoBehaviour
             frequency = 2f
         });
 
-        // Event 4: Cluster at 95 seconds (sit-in/blockade)
+        // Event 4: Cluster at 105 seconds (sit-in/blockade)
         scriptedEvents.Add(new TurbulenceEvent
         {
             eventName = "Blockade",
             pattern = TurbulenceEvent.PatternType.Cluster,
             position = new Vector2(-halfSize.x * 0.15f, -halfSize.y * 0.2f),
             radius = 10f,
-            startTime = 95f,
+            startTime = 105f,
             duration = 18f,
             fadeInTime = 3f,
             fadeOutTime = 2f,
@@ -603,6 +606,18 @@ public class TurbulentEventScheduler : MonoBehaviour
         totalScriptedEvents = scriptedEvents.Count;
     }
     
+    /// <summary>
+    /// Returns true for patterns that generate real divergence and should be suppressed.
+    /// Scatter, Oscillation, and Cluster are divergent.
+    /// Circular, Wave, and Vortex are coherent — leave them alone.
+    /// </summary>
+    static bool IsDivergentPattern(TurbulenceEvent.PatternType pattern)
+    {
+        return pattern == TurbulenceEvent.PatternType.Scatter
+            || pattern == TurbulenceEvent.PatternType.Oscillation
+            || pattern == TurbulenceEvent.PatternType.Cluster;
+    }
+
     void OnGUI()
     {
         if (!showDebugInfo) return;

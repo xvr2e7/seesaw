@@ -55,12 +55,10 @@ public class ConsoleController : MonoBehaviour
         "Move your cursor over a disruption. Hold LEFT CLICK to dampen it.\n" +
         "Watch the agents return to gray. That is the goal.\n\n" +
         "MOUSE         aim the detection field\n" +
-        "LEFT CLICK    activate selected tool\n" +
-        "SCROLL        resize detection area\n" +
+        "LEFT CLICK    hold to suppress\n" +
         "ESC           pause\n\n" +
-        "1  SCAN        hold to suppress  ·  limited energy, recharges\n" +
-        "2  PULSE       instant burst     ·  8s cooldown, no energy cost\n" +
-        "3  LOCK        freeze a cluster  ·  14s cooldown, small radius\n\n" +
+        "Not all disruptions should be suppressed.\n" +
+        "Read the field. Classify the pattern. Decide.\n\n" +
         "The divergence bar (top-left) measures disorder. Keep it low.";
 
     private const string CREDITS_TEXT =

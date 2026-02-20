@@ -105,9 +105,9 @@ public class SamplingGrid : MonoBehaviour
 
     // ── Cluster detection (persistent to avoid per-frame allocs) ──────────────
     private Dictionary<int, List<int>> _cellBuckets = new Dictionary<int, List<int>>();
-    // (min, max, count, inTurbulence)
-    private List<(Vector2 min, Vector2 max, int count, bool inTurb)> _clusterBoxes
-        = new List<(Vector2, Vector2, int, bool)>();
+    // (min, max, count, inTurbulence, divergenceScore)
+    private List<(Vector2 min, Vector2 max, int count, bool inTurb, float score)> _clusterBoxes
+        = new List<(Vector2, Vector2, int, bool, float)>();
 
     // ── Grid sample positions (external consumers) ────────────────────────────
     private Vector2[] samplePositions;
@@ -332,23 +332,46 @@ public class SamplingGrid : MonoBehaviour
     {
         if (_sampleDots == null) return;
 
-        // Derive dot color from current box color (same tint, fixed dim alpha)
-        Color toolColor = _activeToolIndex switch
+        // Energy state encoding per GAMEPLAY_DESCRIPTION.md:
+        //   Full energy  : solid cool blue-gray dots
+        //   Draining     : dims and shifts toward amber as energy depletes
+        //   Low (<30%)   : amber-brown, noticeably dim
+        //   Depleted (0) : dots hidden — tool offline
+        Color dotColor;
+        float dotAlpha;
+
+        if (energyRatio <= 0f)
         {
-            1 => pulseColor,
-            2 => lockColor,
-            _ => (_activeToolIndex == 0 && energyRatio < 0.3f) ? lowEnergyColor : scanColor
-        };
-        Color dotColor  = toolColor;
-        dotColor.a      = sampleDotAlpha;
+            // Depleted — hide all dots
+            for (int i = 0; i < MAX_SAMPLE_DOTS; i++)
+                _sampleDots[i].SetActive(false);
+            return;
+        }
+        else if (energyRatio < 0.3f)
+        {
+            // Low energy: amber-brown, noticeably dim
+            dotColor = new Color(0.55f, 0.40f, 0.22f, 1f);
+            dotAlpha = sampleDotAlpha * Mathf.Lerp(0.35f, 0.55f, energyRatio / 0.3f);
+        }
+        else
+        {
+            // Full → draining: cool blue-gray fading to amber
+            float t  = 1f - energyRatio; // 0 = full, 1 = just entered low zone
+            Color fullColor  = new Color(0.42f, 0.46f, 0.52f, 1f); // cool blue-gray
+            Color drainColor = new Color(0.60f, 0.46f, 0.26f, 1f); // amber
+            dotColor = Color.Lerp(fullColor, drainColor, t);
+            dotAlpha = Mathf.Lerp(sampleDotAlpha, sampleDotAlpha * 0.6f, t);
+        }
+
+        dotColor.a = dotAlpha;
 
         for (int i = 0; i < MAX_SAMPLE_DOTS; i++)
         {
             if (i < activeCount)
             {
                 _sampleDots[i].SetActive(true);
-                _sampleDots[i].transform.position   = new Vector3(samplePositions[i].x, samplePositions[i].y, -1.2f);
-                _sampleDots[i].transform.localScale  = Vector3.one * sampleDotSize;
+                _sampleDots[i].transform.position  = new Vector3(samplePositions[i].x, samplePositions[i].y, -1.2f);
+                _sampleDots[i].transform.localScale = Vector3.one * sampleDotSize;
                 _sampleDots[i].GetComponent<MeshRenderer>().material.color = dotColor;
             }
             else
@@ -372,13 +395,16 @@ public class SamplingGrid : MonoBehaviour
 
         Vector2[] positions = flowSimulation.Positions;
         int       agentCount = flowSimulation.AgentCount;
-        float     radiusSqr  = baseRadius * baseRadius;
 
-        // ── Step 1: bucket agents inside tool radius ──────────────────────────
+        // Grid half-span — matches the visible dot-grid footprint exactly
+        int   gridSize = performanceTracker != null ? performanceTracker.CurrentGridSize : 5;
+        float halfSpan = (gridSize - 1) * 0.5f * dotSpacing;
+
+        // ── Step 1: bucket agents inside the grid square ──────────────────────
         for (int i = 0; i < agentCount; i++)
         {
-            float distSqr = (positions[i] - currentWorldPos).sqrMagnitude;
-            if (distSqr >= radiusSqr) continue;
+            Vector2 delta = positions[i] - currentWorldPos;
+            if (Mathf.Abs(delta.x) > halfSpan || Mathf.Abs(delta.y) > halfSpan) continue;
 
             int cx  = Mathf.FloorToInt(positions[i].x / clusterCellSize);
             int cy  = Mathf.FloorToInt(positions[i].y / clusterCellSize);
@@ -392,7 +418,9 @@ public class SamplingGrid : MonoBehaviour
             bucket.Add(i);
         }
 
-        // ── Step 2: compute AABB per qualifying bucket ────────────────────────
+        // ── Step 2: compute square AABB per qualifying bucket ─────────────────
+        float[] turbInfluence = flowSimulation != null ? flowSimulation.TurbulenceInfluence : null;
+
         foreach (var kv in _cellBuckets)
         {
             List<int> bucket = kv.Value;
@@ -402,28 +430,43 @@ public class SamplingGrid : MonoBehaviour
 
             Vector2 min = new Vector2( float.MaxValue,  float.MaxValue);
             Vector2 max = new Vector2(-float.MaxValue, -float.MaxValue);
+            float turbSum = 0f;
 
             for (int j = 0; j < count; j++)
             {
-                Vector2 p = positions[bucket[j]];
+                int idx = bucket[j];
+                Vector2 p = positions[idx];
                 if (p.x < min.x) min.x = p.x;
                 if (p.y < min.y) min.y = p.y;
                 if (p.x > max.x) max.x = p.x;
                 if (p.y > max.y) max.y = p.y;
+                if (turbInfluence != null && idx < turbInfluence.Length)
+                    turbSum += turbInfluence[idx];
             }
 
             float pad = 0.4f;
             min -= Vector2.one * pad;
             max += Vector2.one * pad;
 
+            // Force true square: expand shorter axis to match longer axis
+            Vector2 boxCenter = (min + max) * 0.5f;
+            float   halfW     = (max.x - min.x) * 0.5f;
+            float   halfH     = (max.y - min.y) * 0.5f;
+            float   halfSide  = Mathf.Max(halfW, halfH);
+            min = boxCenter - Vector2.one * halfSide;
+            max = boxCenter + Vector2.one * halfSide;
+
+            // Divergence probability: logistic function on mean turbulence influence
+            float meanTurb = turbSum / count;
+            float score = 1f / (1f + Mathf.Exp(-10f * (meanTurb - 0.4f)));
+
             bool inTurb = false;
             if (classifier != null)
             {
-                Vector2 center = (min + max) * 0.5f;
-                inTurb = classifier.IsInTurbulence(center);
+                inTurb = classifier.IsInTurbulence(boxCenter);
             }
 
-            _clusterBoxes.Add((min, max, count, inTurb));
+            _clusterBoxes.Add((min, max, count, inTurb, score));
         }
 
         renderSubBoxes:
@@ -439,7 +482,7 @@ public class SamplingGrid : MonoBehaviour
         int boxCount = Mathf.Min(_clusterBoxes.Count, maxSubBoxes);
         for (int b = 0; b < boxCount; b++)
         {
-            var (min, max, count, inTurb) = _clusterBoxes[b];
+            var (min, max, count, inTurb, score) = _clusterBoxes[b];
             Color color = inTurb ? subBoxTurbulenceColor : subBoxColor;
             float z     = -0.9f;
             int   baseIdx = b * 4;
@@ -466,66 +509,124 @@ public class SamplingGrid : MonoBehaviour
 
     void OnGUI()
     {
-        if (classifier == null || mainCamera == null) return;
+        if (mainCamera == null) return;
 
-        // Pattern label above outer box
-        string eventName = classifier.DetectEventAt(currentWorldPos);
-        if (!string.IsNullOrEmpty(eventName))
+        // Pattern label — shown when cursor overlaps an active event zone
         {
-            string keyword = ExtractPatternKeyword(eventName);
+            string keyword = SamplePatternLabel();
 
-            Vector3 worldPos   = new Vector3(currentWorldPos.x, currentWorldPos.y + baseRadius + eventNameOffset, 0f);
-            Vector3 screenPos  = mainCamera.WorldToScreenPoint(worldPos);
-            screenPos.y        = Screen.height - screenPos.y;
+            if (!string.IsNullOrEmpty(keyword))
+            {
+                // Top-left corner of the dot grid
+                int gridSize = performanceTracker != null ? performanceTracker.CurrentGridSize : 5;
+                float halfSpan = (gridSize - 1) * 0.5f * dotSpacing;
+                Vector3 worldPos  = new Vector3(
+                    currentWorldPos.x - halfSpan,
+                    currentWorldPos.y + halfSpan + eventNameOffset,
+                    0f);
+                Vector3 screenPos = mainCamera.WorldToScreenPoint(worldPos);
+                screenPos.y       = Screen.height - screenPos.y;
 
-            Rect rect = new Rect(screenPos.x - 160, screenPos.y - eventNameFontSize / 2, 320, eventNameFontSize + 10);
+                // Left-aligned, just above the top-left dot
+                Rect rect = new Rect(screenPos.x, screenPos.y - eventNameFontSize, 220, eventNameFontSize + 4);
 
-            Color nameColor = eventNameColor;
-            if (isActive) nameColor.a *= 0.9f + Mathf.Sin(Time.time * 8f) * 0.1f;
-            eventNameStyle.normal.textColor = nameColor;
-
-            GUI.Label(rect, keyword, eventNameStyle);
+                Color nameColor = eventNameColor;
+                if (isActive) nameColor.a *= 0.9f + Mathf.Sin(Time.time * 8f) * 0.1f;
+                eventNameStyle.normal.textColor = nameColor;
+                eventNameStyle.alignment = TextAnchor.UpperLeft;
+                GUI.Label(rect, keyword, eventNameStyle);
+                eventNameStyle.alignment = TextAnchor.MiddleCenter;
+            }
         }
 
-        // Cluster count labels — only for turbulent clusters
-        foreach (var (min, max, count, inTurb) in _clusterBoxes)
+        // Sub-box labels: score in top-left, ×N count at bottom
+        foreach (var (min, max, count, inTurb, score) in _clusterBoxes)
         {
-            if (!inTurb) continue;
+            Color labelCol = inTurb ? subBoxTurbulenceColor : subBoxColor;
+            labelCol.a = Mathf.Max(labelCol.a, 0.55f);
 
-            Vector2 center    = (min + max) * 0.5f;
-            Vector3 screenPos = mainCamera.WorldToScreenPoint(
-                new Vector3(center.x, max.y + 0.3f, 0f));
-            screenPos.y = Screen.height - screenPos.y;
+            const int SUB_FONT = 16;
+            const int LABEL_H  = 20;
+            const int LABEL_W  = 64;
 
-            Rect labelRect = new Rect(screenPos.x - 20, screenPos.y - 8, 40, 16);
+            Color prev    = eventNameStyle.normal.textColor;
+            int prevSize  = eventNameStyle.fontSize;
 
-            Color prev = eventNameStyle.normal.textColor;
-            eventNameStyle.normal.textColor = subBoxTurbulenceColor;
-            GUI.Label(labelRect, $"\u00d7{count}", eventNameStyle);
+            // Score label — top-left corner of sub-box
+            Vector3 scoreWorldPos = new Vector3(min.x, max.y, 0f);
+            Vector3 scoreScreen   = mainCamera.WorldToScreenPoint(scoreWorldPos);
+            scoreScreen.y = Screen.height - scoreScreen.y;
+
+            Rect scoreRect = new Rect(scoreScreen.x, scoreScreen.y - LABEL_H, LABEL_W, LABEL_H);
+
+            eventNameStyle.fontSize  = SUB_FONT;
+            eventNameStyle.alignment = TextAnchor.UpperLeft;
+            eventNameStyle.normal.textColor = labelCol;
+            GUI.Label(scoreRect, score.ToString("F2"), eventNameStyle);
+
+            // Count label — bottom-right corner of sub-box
+            Vector3 countWorldPos = new Vector3(max.x, min.y, 0f);
+            Vector3 countScreen   = mainCamera.WorldToScreenPoint(countWorldPos);
+            countScreen.y = Screen.height - countScreen.y;
+
+            Rect countRect = new Rect(countScreen.x - LABEL_W, countScreen.y, LABEL_W, LABEL_H);
+            eventNameStyle.alignment = TextAnchor.LowerRight;
+            GUI.Label(countRect, $"\u00d7{count}", eventNameStyle);
+
+            // Restore style
+            eventNameStyle.fontSize  = prevSize;
+            eventNameStyle.alignment = TextAnchor.MiddleCenter;
             eventNameStyle.normal.textColor = prev;
         }
     }
 
-    string ExtractPatternKeyword(string eventName)
+    /// <summary>
+    /// Returns the pattern keyword when cursor is inside an active event zone
+    /// (within 80% of radius, intensity ≥ 0.3), or null when outside all events.
+    /// Labels match the gameplay description table exactly.
+    /// </summary>
+    string SamplePatternLabel()
     {
-        if (eventName.Contains("Circular") || eventName.Contains("Assembly") || eventName.Contains("Gather"))
-            return "ASSEMBLY";
-        if (eventName.Contains("Scatter") || eventName.Contains("Panic"))
-            return "DISPERSAL";
-        if (eventName.Contains("Vortex") || eventName.Contains("Spiral"))
-            return "SPIRAL FORMATION";
-        if (eventName.Contains("Wave") || eventName.Contains("March"))
-            return "MARCH";
-        if (eventName.Contains("Oscillation"))
-            return "DISTURBANCE";
-        if (eventName.Contains("Cluster") || eventName.Contains("Blockade") || eventName.Contains("Aftermath"))
-            return "BLOCKADE";
+        if (classifier == null) return null;
 
-        int underscoreIndex = eventName.IndexOf('_');
-        if (underscoreIndex > 0)
-            return eventName.Substring(0, underscoreIndex).ToUpper();
+        var scheduler = classifier.scheduler;
+        if (scheduler == null) return null;
 
-        return eventName.ToUpper();
+        var activeEvents = scheduler.GetActiveEvents();
+        if (activeEvents == null || activeEvents.Count == 0) return null;
+
+        TurbulenceEvent strongest = null;
+        float bestInfluence = 0f;
+
+        foreach (var evt in activeEvents)
+        {
+            if (!evt.isActive || evt.currentIntensity < 0.3f) continue;
+
+            float dist          = Vector2.Distance(currentWorldPos, evt.position);
+            float effectiveRadius = evt.radius * 0.8f;
+            if (dist > effectiveRadius) continue;
+
+            float normalizedDist = dist / effectiveRadius;
+            float influence      = (1f - normalizedDist) * evt.currentIntensity;
+            if (influence > bestInfluence)
+            {
+                bestInfluence = influence;
+                strongest     = evt;
+            }
+        }
+
+        if (strongest == null) return null;
+
+        switch (strongest.pattern)
+        {
+            case TurbulenceEvent.PatternType.Circular:    return "ASSEMBLY";
+            case TurbulenceEvent.PatternType.Scatter:     return "DISPERSAL";
+            case TurbulenceEvent.PatternType.Vortex:      return "SPIRAL";
+            case TurbulenceEvent.PatternType.Wave:        return "MARCH";
+            case TurbulenceEvent.PatternType.Oscillation: return "DISTURBANCE";
+            case TurbulenceEvent.PatternType.Cluster:     return "BLOCKADE";
+            default: return null;
+        }
     }
 
     // ── Public API ────────────────────────────────────────────────────────────

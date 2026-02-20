@@ -66,7 +66,7 @@ public class ToolEnergySystem : MonoBehaviour
         currentEnergy = Mathf.Max(0f, currentEnergy);
         timeSinceLastUse = 0f;
 
-        if (currentEnergy <= 0f)
+        if (currentEnergy < minActivationEnergy)
         {
             isDepleted = true;
             return false;

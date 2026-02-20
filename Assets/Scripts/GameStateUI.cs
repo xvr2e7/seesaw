@@ -41,12 +41,12 @@ public class GameStateUI : MonoBehaviour
     public float fadeOutDuration = 1f;
 
     [Header("Guidance Overlay")]
-    [Tooltip("Phase A message, shown t=3-8s — before first event")]
-    public string guidancePhaseA  = "colored disruptions will appear  ·  move your cursor over them";
-    [Tooltip("Phase B message, shown t=8-18s — as first event starts")]
-    public string guidancePhaseB  = "hold LEFT CLICK to suppress  ·  keep the field gray";
-    [Tooltip("Phase C — tool reminder, shown t=55-65s")]
-    public string guidancePhaseC1 = "1 SCAN   2 PULSE   3 LOCK  ·  scroll to resize";
+    [Tooltip("Phase A message, shown t=3-8s — before first event appears")]
+    public string guidancePhaseA  = "move your cursor across the field";
+    [Tooltip("Phase B message, shown t=10-20s — as first CIRCULAR event appears (not a threat)")]
+    public string guidancePhaseB  = "some events are not threats";
+    [Tooltip("Phase C message, shown t=83-95s — as first SCATTER event appears (divergent, suppress it)")]
+    public string guidancePhaseC1 = "hold LEFT CLICK to suppress";
     public int guidanceFontSize = 16;
     [Range(0f, 1f)] public float guidanceMaxAlpha = 0.55f;
 
@@ -111,13 +111,18 @@ public class GameStateUI : MonoBehaviour
     {
         if (stylesInitialized) return;
 
+        Font resolvedFont = customFont;
+        if (resolvedFont == null)
+            resolvedFont = Font.CreateDynamicFontFromOSFont(
+                new string[] { "Space Mono", "Consolas", "Courier New", "Courier" }, 18);
+
         labelStyle = new GUIStyle(GUI.skin.label)
         {
             fontSize  = 18,
             fontStyle = FontStyle.Normal,
             alignment = TextAnchor.MiddleLeft
         };
-        if (customFont != null) labelStyle.font = customFont;
+        if (resolvedFont != null) labelStyle.font = resolvedFont;
         labelStyle.normal.textColor = textColor;
 
         valueStyle = new GUIStyle(GUI.skin.label)
@@ -126,7 +131,7 @@ public class GameStateUI : MonoBehaviour
             fontStyle = FontStyle.Normal,
             alignment = TextAnchor.MiddleLeft
         };
-        if (customFont != null) valueStyle.font = customFont;
+        if (resolvedFont != null) valueStyle.font = resolvedFont;
         valueStyle.normal.textColor = new Color(0.55f, 0.58f, 0.62f, 0.90f);
 
         scoreStyle = new GUIStyle(GUI.skin.label)
@@ -135,7 +140,7 @@ public class GameStateUI : MonoBehaviour
             fontStyle = FontStyle.Normal,
             alignment = TextAnchor.MiddleCenter
         };
-        if (customFont != null) scoreStyle.font = customFont;
+        if (resolvedFont != null) scoreStyle.font = resolvedFont;
         scoreStyle.normal.textColor = new Color(0.75f, 0.75f, 0.78f, 1f);
 
         scoreLabelStyle = new GUIStyle(GUI.skin.label)
@@ -144,7 +149,7 @@ public class GameStateUI : MonoBehaviour
             fontStyle = FontStyle.Normal,
             alignment = TextAnchor.MiddleCenter
         };
-        if (customFont != null) scoreLabelStyle.font = customFont;
+        if (resolvedFont != null) scoreLabelStyle.font = resolvedFont;
         scoreLabelStyle.normal.textColor = new Color(0.40f, 0.42f, 0.45f, 0.9f);
 
         stylesInitialized = true;
@@ -232,9 +237,8 @@ public class GameStateUI : MonoBehaviour
         if (isPaused) return;
         InitStyles();
         
-        // Draw HUD during gameplay
-        if (currentGameState == GameManager.GameState.Playing || 
-            currentGameState == GameManager.GameState.Ending)
+        // Draw HUD always (divergence visible from the moment the game loads)
+        if (currentGameState != GameManager.GameState.Complete)
         {
             DrawHUD();
         }
@@ -333,12 +337,12 @@ public class GameStateUI : MonoBehaviour
         string message = null;
         float  alpha   = 0f;
 
-        // A: t=3–8s  — before first event (t=10s), tell them what to look for
-        if      (t >= 3f  && t < 8f)  { message = guidancePhaseA;  alpha = GuidanceAlpha(t,  3f,  4f,  7f,  8f); }
-        // B: t=8–18s — first event is live at t=10s, tell them how to act
-        else if (t >= 8f  && t < 18f) { message = guidancePhaseB;  alpha = GuidanceAlpha(t,  8f,  9f, 16f, 18f); }
-        // C: t=55–65s — light tool reminder after the escalation begins
-        else if (t >= 55f && t < 65f) { message = guidancePhaseC1; alpha = GuidanceAlpha(t, 55f, 57f, 63f, 65f); }
+        // A: t=3–9s   — before first event (t=10s); orient player to the field
+        if      (t >= 3f  && t < 9f)  { message = guidancePhaseA;  alpha = GuidanceAlpha(t,  3f,  4f,  8f,  9f); }
+        // B: t=10–22s — CIRCULAR event is live at t=10s; teach discrimination
+        else if (t >= 10f && t < 22f) { message = guidancePhaseB;  alpha = GuidanceAlpha(t, 10f, 11f, 20f, 22f); }
+        // C: t=83–97s — SCATTER event arrives at t=85s; teach suppression
+        else if (t >= 83f && t < 97f) { message = guidancePhaseC1; alpha = GuidanceAlpha(t, 83f, 85f, 95f, 97f); }
 
         if (message == null || alpha <= 0.005f) return;
 
@@ -350,7 +354,9 @@ public class GameStateUI : MonoBehaviour
                 fontStyle = FontStyle.Normal,
                 alignment = TextAnchor.MiddleCenter
             };
-            if (customFont != null) guidanceStyle.font = customFont;
+            Font gFont = customFont ?? Font.CreateDynamicFontFromOSFont(
+                new string[] { "Space Mono", "Consolas", "Courier New", "Courier" }, guidanceFontSize);
+            if (gFont != null) guidanceStyle.font = gFont;
         }
 
         Color col = new Color(0.70f, 0.72f, 0.76f, alpha * guidanceMaxAlpha);
@@ -388,7 +394,9 @@ public class GameStateUI : MonoBehaviour
                 alignment = TextAnchor.MiddleCenter,
                 wordWrap  = false
             };
-            if (customFont != null) revelationStyle.font = customFont;
+            Font rFont = customFont ?? Font.CreateDynamicFontFromOSFont(
+                new string[] { "Space Mono", "Consolas", "Courier New", "Courier" }, revelationFontSize);
+            if (rFont != null) revelationStyle.font = rFont;
             revelationStyleInit = true;
         }
 

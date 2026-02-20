@@ -285,7 +285,7 @@ MonoBehaviour:
   minRadius: 2
   maxRadius: 25
   scrollSensitivity: 0.5
-  hudFont: {fileID: 12800000, guid: bd59f6191291fe54698226682670ca7b, type: 3}
+  hudFont: {fileID: 12800000, guid: 0d7dab90c10f4f24590f3a8b80d25919, type: 3}
   showDebugInfo: 0
 --- !u!1 &1356720804
 GameObject:
@@ -353,12 +353,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b081988e3a5701d4f8b2795d144bf06e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  gameManager: {fileID: 0}
-  playerTool: {fileID: 0}
-  flowSimulation: {fileID: 0}
+  gameManager: {fileID: 1718674880}
+  playerTool: {fileID: 1096061148}
+  flowSimulation: {fileID: 1382237305}
   customFont: {fileID: 12800000, guid: bd59f6191291fe54698226682670ca7b, type: 3}
-  leftMargin: 20
-  divergenceBarWidth: 200
+  rightMargin: 20
+  topOffset: 170
+  divergenceBarWidth: 420
   divergenceBarHeight: 8
   maxDisplayDivergence: 2
   textColor: {r: 0.5, g: 0.52, b: 0.56, a: 0.85}
@@ -369,13 +370,12 @@ MonoBehaviour:
   scoreTransitionDuration: 1.5
   fadeInDuration: 1.5
   fadeOutDuration: 1
-  guidancePhaseA: observe the field
-  guidancePhaseB: "move cursor  \xB7  hold to act"
-  guidancePhaseC1: "1   SCAN  \u2014  hold to suppress movement"
-  guidancePhaseC2: "2   PULSE  \u2014  instant burst, 8s cooldown"
-  guidancePhaseC3: "3   LOCK  \u2014  pin a cluster, 14s cooldown"
+  guidancePhaseA: "colored disruptions will appear  \xB7  move your cursor over them"
+  guidancePhaseB: "hold LEFT CLICK to suppress  \xB7  keep the field gray"
+  guidancePhaseC1: "not every disruption is a threat  \xB7  read the field before
+    you act"
   guidanceFontSize: 16
-  guidanceMaxAlpha: 0.28
+  guidanceMaxAlpha: 0.55
   revelationLine1: you have been managing crowd suppression
   revelationLine2: every point of coherence was a dispersal
   revelationFontSize: 18
@@ -453,7 +453,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e66a41b2b00d32641bdc6727820fad16, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  agentCount: 800
+  agentCount: 1000
   worldHeight: 60
   targetAspectRatio: 1.778
   moveSpeed: 1

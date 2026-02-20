@@ -294,18 +294,16 @@ public class GameManager : MonoBehaviour
     bool CheckEventsComplete()
     {
         if (eventScheduler == null) return false;
-        
-        // Check if all scripted events have completed
-        var activeEvents = eventScheduler.GetActiveEvents();
-        
-        // Must have been playing for at least 60% of max duration
-        // AND no active events remaining
-        // AND past initial delay period
-        bool minimumTimePassed = sessionTime >= maxSessionDuration * 0.6f;
-        bool noActiveEvents = activeEvents.Count == 0;
-        bool pastInitialDelay = sessionTime > eventScheduler.initialDelay + 30f;
-        
-        return minimumTimePassed && noActiveEvents && pastInitialDelay;
+
+        // Per GAMEPLAY_DESCRIPTION.md: session ends early only when ALL THREE hold:
+        //   1. All scripted events have completed
+        //   2. At least 3 minutes (180s) have elapsed
+        //   3. No events currently active
+        bool allScriptedDone = eventScheduler.AllScriptedEventsComplete;
+        bool minimumTimePassed = sessionTime >= 180f;
+        bool noActiveEvents = eventScheduler.GetActiveEvents().Count == 0;
+
+        return allScriptedDone && minimumTimePassed && noActiveEvents;
     }
     
     void EndSession(string reason)

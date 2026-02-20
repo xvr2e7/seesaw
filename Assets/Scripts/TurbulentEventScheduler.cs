@@ -75,11 +75,16 @@ public class TurbulentEventScheduler : MonoBehaviour
     private float nextRandomEventTime = 0f;
     private int totalEventsSpawned = 0;
     private float currentDifficulty = 1f;
-    
+
     // Event tracking
     private int activeRandomEventCount = 0;
     private int completedScriptedEvents = 0;
     private int totalScriptedEvents = 0;
+
+    // Guidance phase state
+    private bool guidancePaused = false;
+    private List<TurbulenceEvent> guidanceEvents = new List<TurbulenceEvent>();
+    private float guidanceWallclock = 0f;
     
     // Public accessors
     public float SimulationTime => simulationTime;
@@ -124,31 +129,38 @@ public class TurbulentEventScheduler : MonoBehaviour
     void Update()
     {
         float dt = Time.deltaTime;
-        simulationTime += dt;
-        
-        // Update difficulty — ramp starts after the random-event window opens
-        // so the tutorial scripted events play at their designed base strength
-        if (scaleDifficulty)
+
+        if (!guidancePaused)
         {
-            float rampableTime = Mathf.Max(0f, simulationTime - initialDelay);
-            currentDifficulty = Mathf.Min(
-                1f + rampableTime * difficultyRamp,
-                maxDifficultyMultiplier
-            );
+            simulationTime += dt;
+
+            // Update difficulty — ramp starts after the random-event window opens
+            // so the tutorial scripted events play at their designed base strength
+            if (scaleDifficulty)
+            {
+                float rampableTime = Mathf.Max(0f, simulationTime - initialDelay);
+                currentDifficulty = Mathf.Min(
+                    1f + rampableTime * difficultyRamp,
+                    maxDifficultyMultiplier
+                );
+            }
+
+            // Update scripted events
+            if (useScriptedEvents)
+            {
+                UpdateScriptedEvents();
+            }
+
+            // Spawn random events (within cutoff time)
+            if (enableRandomEvents && simulationTime < randomEventCutoff)
+            {
+                UpdateRandomEvents();
+            }
         }
-        
-        // Update scripted events
-        if (useScriptedEvents)
-        {
-            UpdateScriptedEvents();
-        }
-        
-        // Spawn random events (within cutoff time)
-        if (enableRandomEvents && simulationTime < randomEventCutoff)
-        {
-            UpdateRandomEvents();
-        }
-        
+
+        // Guidance events always tick on their own wallclock
+        UpdateGuidanceEvents(dt);
+
         // Report active turbulence to FlowSimulation for scoring.
         // Only DIVERGENT patterns (Scatter, Oscillation, Cluster) contribute to divergence.
         // Coherent patterns (Circular, Wave, Vortex) are organized — suppress them and
@@ -166,7 +178,7 @@ public class TurbulentEventScheduler : MonoBehaviour
 
         // Apply all active events to simulation
         ApplyTurbulenceToSimulation(dt);
-        
+
         // Clean up completed events
         CleanupCompletedEvents();
     }
@@ -296,10 +308,14 @@ public class TurbulentEventScheduler : MonoBehaviour
             // Pattern ID: 1=Circular, 2=Scatter, 3=Vortex, 4=Wave, 5=Oscillation, 6=Cluster
             int patternID = (int)evt.pattern + 1;
 
+            // Guidance events use their own wallclock so animated forces work correctly
+            // while simulationTime is frozen
+            float timeForEvent = guidanceEvents.Contains(evt) ? guidanceWallclock : simulationTime;
+
             for (int i = 0; i < count; i++)
             {
                 // Calculate and apply force
-                Vector2 force = evt.CalculateForce(positions[i], simulationTime);
+                Vector2 force = evt.CalculateForce(positions[i], timeForEvent);
 
                 // If this agent is affected by this event, mark its pattern
                 if (force.sqrMagnitude > 0.001f)
@@ -336,6 +352,86 @@ public class TurbulentEventScheduler : MonoBehaviour
         }
     }
     
+    // ─── Guidance event management ────────────────────────────────────────────
+
+    /// <summary>Freeze simulationTime and scripted event processing during guidance phase.</summary>
+    public void SetGuidancePause(bool paused)
+    {
+        guidancePaused = paused;
+    }
+
+    /// <summary>
+    /// Spawn a short-lived event for the guidance phase. Uses an independent wallclock
+    /// so simulationTime is not consumed. Does not count toward scripted totals.
+    /// </summary>
+    public void SpawnGuidanceEvent(
+        TurbulenceEvent.PatternType pattern,
+        Vector2 position,
+        float radius,
+        float duration)
+    {
+        var evt = new TurbulenceEvent
+        {
+            eventName   = $"Guidance_{pattern}_{guidanceEvents.Count}",
+            pattern     = pattern,
+            position    = position,
+            radius      = radius,
+            innerRadius = (pattern == TurbulenceEvent.PatternType.Circular) ? radius * 0.3f : 0f,
+            startTime   = 0f,
+            duration    = duration,
+            fadeInTime  = 1.5f,
+            fadeOutTime = 2f,
+            strength    = 2.5f,
+            frequency   = 0.8f,
+            direction   = Vector2.right
+        };
+
+        evt.Reset();
+        evt.UpdateTiming(0f); // startTime=0, activates immediately at wallclock=0
+
+        guidanceEvents.Add(evt);
+        if (!activeEvents.Contains(evt))
+            activeEvents.Add(evt);
+
+        OnEventStarted(evt);
+    }
+
+    private void UpdateGuidanceEvents(float dt)
+    {
+        if (guidanceEvents.Count == 0) return;
+
+        guidanceWallclock += dt;
+
+        foreach (var evt in guidanceEvents)
+        {
+            if (!evt.isComplete)
+                evt.UpdateTiming(guidanceWallclock);
+
+            if (evt.isActive && !activeEvents.Contains(evt))
+                activeEvents.Add(evt);
+        }
+
+        // Remove completed guidance events from both lists
+        for (int i = guidanceEvents.Count - 1; i >= 0; i--)
+        {
+            if (guidanceEvents[i].isComplete)
+            {
+                activeEvents.Remove(guidanceEvents[i]);
+                guidanceEvents.RemoveAt(i);
+            }
+        }
+    }
+
+    /// <summary>Remove all guidance events and reset the guidance wallclock.</summary>
+    public void ClearGuidanceEvents()
+    {
+        foreach (var evt in guidanceEvents)
+            activeEvents.Remove(evt);
+
+        guidanceEvents.Clear();
+        guidanceWallclock = 0f;
+    }
+
     void OnEventStarted(TurbulenceEvent evt)
     {
         if (showDebugInfo)
@@ -346,8 +442,10 @@ public class TurbulentEventScheduler : MonoBehaviour
     
     void OnEventEnded(TurbulenceEvent evt)
     {
-        // Track scripted event completion
-        if (!evt.eventName.StartsWith("Random") && !evt.eventName.StartsWith("Manual"))
+        // Track scripted event completion — exclude dynamic/guidance events
+        if (!evt.eventName.StartsWith("Random") &&
+            !evt.eventName.StartsWith("Manual") &&
+            !evt.eventName.StartsWith("Guidance"))
         {
             completedScriptedEvents++;
         }
@@ -588,12 +686,18 @@ public class TurbulentEventScheduler : MonoBehaviour
         totalEventsSpawned = 0;
         currentDifficulty = 1f;
         completedScriptedEvents = 0;
-        
+
+        // Clear guidance state
+        guidanceEvents.Clear();
+        guidancePaused = false;
+        guidanceWallclock = 0f;
+
         // Reset scripted events but keep random ones removed
         for (int i = scriptedEvents.Count - 1; i >= 0; i--)
         {
-            if (scriptedEvents[i].eventName.StartsWith("Random") || 
-                scriptedEvents[i].eventName.StartsWith("Manual"))
+            if (scriptedEvents[i].eventName.StartsWith("Random") ||
+                scriptedEvents[i].eventName.StartsWith("Manual") ||
+                scriptedEvents[i].eventName.StartsWith("Guidance"))
             {
                 scriptedEvents.RemoveAt(i);
             }
@@ -602,7 +706,7 @@ public class TurbulentEventScheduler : MonoBehaviour
                 scriptedEvents[i].Reset();
             }
         }
-        
+
         totalScriptedEvents = scriptedEvents.Count;
     }
     

@@ -368,6 +368,14 @@ public class PlayerToolController : MonoBehaviour
     {
         if (samplingGrid == null) return;
 
+        // Hide grid entirely during terminal intro
+        if (_gameManager == null) _gameManager = FindObjectOfType<GameManager>();
+        if (_gameManager != null && _gameManager.IsTerminalIntro)
+        {
+            samplingGrid.SetActive(false);
+            return;
+        }
+
         bool isActive = _scanActive || _firedThisFrame;
         samplingGrid.SetActive(isActive);
         samplingGrid.SetActiveTool((int)_activeTool);
@@ -417,8 +425,9 @@ public class PlayerToolController : MonoBehaviour
 
     // ── HUD + debug ───────────────────────────────────────────────────────────
 
-    private bool _hudPaused = false;
-    private bool _inDocumentaryPhase = false;
+    private bool        _hudPaused = false;
+    private bool        _inDocumentaryPhase = false;
+    private GameManager _gameManager = null;
 
     public void SetPaused(bool paused) { _hudPaused = paused; }
     public void SetDocumentaryPhase(bool documentary) { _inDocumentaryPhase = documentary; }

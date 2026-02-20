@@ -501,11 +501,13 @@ public class PauseMenuController : MonoBehaviour
             "Move your cursor over a disruption. Hold LEFT CLICK to dampen it.\n" +
             "Watch the agents return to gray. That is the goal.\n\n" +
             "MOUSE         aim the detection field\n" +
-            "LEFT CLICK    activate selected tool\n" +
-            "SCROLL        resize detection area\n\n" +
-            "1  SCAN        hold to suppress  \u00b7  limited energy, recharges\n" +
-            "2  PULSE       instant burst     \u00b7  8s cooldown, no energy cost\n" +
-            "3  LOCK        freeze a cluster  \u00b7  14s cooldown, small radius\n\n" +
+            "LEFT CLICK    hold to suppress\n" +
+            "ESC           pause\n\n" +
+            "SUPPRESS                   LEAVE\n" +
+            "--------                   -----\n" +
+            "DISPERSAL                  ASSEMBLY\n" +
+            "DISTURBANCE                SPIRAL\n" +
+            "BLOCKADE                   MARCH\n\n" +
             "The divergence bar (top-left) measures disorder. Keep it low.";
 
         var bodyGO  = new GameObject("Body");

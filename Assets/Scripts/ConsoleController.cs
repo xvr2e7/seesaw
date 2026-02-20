@@ -137,6 +137,8 @@ public class ConsoleController : MonoBehaviour
     private static bool returningFromGame = false;
     public  static void SetReturningFromGame() => returningFromGame = true;
 
+    private bool skipTerminal = false; // set true by any input during IntroSequence
+
     // Right column (shown after documentary)
     private bool           showRightColumn = false;
     private GameObject     rightColumnObj;
@@ -155,6 +157,10 @@ public class ConsoleController : MonoBehaviour
     private VideoPlayer    videoPlayer;
     private AudioSource    videoAudio;
     private bool           isPlayingVideo = false;
+
+    // Terminal boot overlay
+    private TextMeshProUGUI terminalText;
+    private GameObject      terminalOverlayObj;
 
     // Font (resolved in Start)
     private TMP_FontAsset resolvedFont;
@@ -175,30 +181,25 @@ public class ConsoleController : MonoBehaviour
         // Show right column if the player has ever completed a run
         showRightColumn = GameManager.HasBestScore();
 
-        if (returningFromDocumentary)
-        {
-            returningFromDocumentary = false;
-            CreateUI();
-            Cursor.visible = false;
-            StartCoroutine(FadeIn(fadeInDuration));
-        }
-        else if (returningFromGame)
-        {
-            returningFromGame = false;
-            CreateUI();
-            Cursor.visible = false;
-            StartCoroutine(FadeIn(fadeInDuration));
-        }
-        else
-        {
-            CreateUI();
-            Cursor.visible = false;
-            StartCoroutine(IntroSequence());
-        }
+        // Clear stale flags (guards against disabled domain reload in editor)
+        returningFromDocumentary = false;
+        returningFromGame        = false;
+
+        CreateUI();
+        Cursor.visible = false;
+        skipTerminal   = false;
+        StartCoroutine(IntroSequence());
     }
 
     void Update()
     {
+        // Any key or click skips the terminal boot sequence
+        if (!skipTerminal && terminalOverlayObj != null && terminalOverlayObj.activeSelf)
+        {
+            if (Input.anyKeyDown)
+                skipTerminal = true;
+        }
+
         if (Input.GetKeyDown(KeyCode.Escape))
         {
             if (isPlayingVideo)
@@ -313,9 +314,12 @@ public class ConsoleController : MonoBehaviour
         // Procedural cursor (topmost)
         CreateCursor(canvasGO.transform);
 
-        // Fade overlay (above everything except cursor)
+        // Fade overlay (below terminal and cursor)
         fadeOverlay = CreateFullscreenImage(canvasGO.transform, "FadeOverlay", Color.black);
         fadeOverlay.raycastTarget = false;
+
+        // Terminal boot overlay (above fade, below cursor)
+        CreateTerminalOverlay(canvasGO.transform);
 
         // Move cursor to top of hierarchy
         cursorRect.parent.SetAsLastSibling();
@@ -368,6 +372,45 @@ public class ConsoleController : MonoBehaviour
         videoPlayer.Prepare();
 
         videoScreenObj.SetActive(false);
+    }
+
+    // ─── Terminal Boot Overlay ────────────────────────────────────────────────
+
+    void CreateTerminalOverlay(Transform parent)
+    {
+        terminalOverlayObj = new GameObject("TerminalOverlay");
+        terminalOverlayObj.transform.SetParent(parent, false);
+
+        // Fullscreen black background
+        var bg = terminalOverlayObj.AddComponent<Image>();
+        bg.color = Color.black;
+        bg.raycastTarget = false;
+        var bgRect = terminalOverlayObj.GetComponent<RectTransform>();
+        bgRect.anchorMin = Vector2.zero;
+        bgRect.anchorMax = Vector2.one;
+        bgRect.offsetMin = Vector2.zero;
+        bgRect.offsetMax = Vector2.zero;
+
+        // Monospace text label — mirrors left-column layout (x=160, y=-120 from top)
+        var textGO = new GameObject("TerminalText");
+        textGO.transform.SetParent(terminalOverlayObj.transform, false);
+        terminalText = textGO.AddComponent<TextMeshProUGUI>();
+        terminalText.font          = resolvedFont;
+        terminalText.fontSize      = 14f;
+        terminalText.color         = new Color(0.55f, 0.60f, 0.65f, 0.90f);
+        terminalText.alignment     = TextAlignmentOptions.Left;
+        terminalText.lineSpacing   = 10f;
+        terminalText.raycastTarget = false;
+        terminalText.text          = "";
+
+        var textRect = textGO.GetComponent<RectTransform>();
+        textRect.anchorMin        = new Vector2(0f, 1f);
+        textRect.anchorMax        = new Vector2(0.7f, 1f);
+        textRect.pivot            = new Vector2(0f, 1f);
+        textRect.anchoredPosition = new Vector2(160f, -120f);
+        textRect.sizeDelta        = new Vector2(0f, 400f);
+
+        terminalOverlayObj.SetActive(false); // revealed only during IntroSequence
     }
 
     private Texture2D sunGlowTexture;
@@ -1373,9 +1416,9 @@ public class ConsoleController : MonoBehaviour
 
     IEnumerator IntroSequence()
     {
-        // Start from black, slow fade in
+        // Simple fade-in from black — terminal boot has moved to the game scene
         fadeOverlay.color = Color.black;
-        yield return new WaitForSeconds(0.4f);
+        yield return new WaitForSeconds(0.3f);
         yield return StartCoroutine(FadeOverlayTo(0f, fadeInDuration));
     }
 

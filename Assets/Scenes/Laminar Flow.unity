@@ -356,7 +356,7 @@ MonoBehaviour:
   gameManager: {fileID: 1718674880}
   playerTool: {fileID: 1096061148}
   flowSimulation: {fileID: 1382237305}
-  customFont: {fileID: 12800000, guid: bd59f6191291fe54698226682670ca7b, type: 3}
+  customFont: {fileID: 12800000, guid: 0d7dab90c10f4f24590f3a8b80d25919, type: 3}
   rightMargin: 20
   topOffset: 170
   divergenceBarWidth: 420
@@ -370,10 +370,11 @@ MonoBehaviour:
   scoreTransitionDuration: 1.5
   fadeInDuration: 1.5
   fadeOutDuration: 1
-  guidancePhaseA: "colored disruptions will appear  \xB7  move your cursor over them"
-  guidancePhaseB: "hold LEFT CLICK to suppress  \xB7  keep the field gray"
-  guidancePhaseC1: "not every disruption is a threat  \xB7  read the field before
-    you act"
+  guidanceStep0Text: move the sensor across the field
+  guidanceStep1Text: "a disturbance appeared  \u2014  watch it  \u2014  do not click"
+  guidanceStep2Text: "another one  \u2014  hold LEFT CLICK over it to suppress"
+  guidanceStep3Text: "some you suppress  \u2014  some you leave"
+  guidanceStep4Text: session begins
   guidanceFontSize: 16
   guidanceMaxAlpha: 0.55
   revelationLine1: you have been managing crowd suppression
@@ -601,12 +602,20 @@ MonoBehaviour:
   cameraController: {fileID: 2057931244}
   soundscape: {fileID: 1940927234}
   gameStateUI: {fileID: 1356720807}
+  documentaryController: {fileID: 0}
   maxSessionDuration: 300
   introDuration: 3
   endingDuration: 2
   scoreSampleInterval: 0.5
   averageDivergenceWeight: 0.6
   peakDivergenceWeight: 0.4
+  guidanceMouseTravelThreshold: 200
+  guidanceEventRadius: 10
+  guidanceHoverDuration: 3
+  guidanceSuppressDuration: 1.5
+  guidanceStep3Duration: 3
+  guidanceStep4Duration: 2
+  scoreScreenDuration: 5
   showDebugInfo: 0
 --- !u!4 &1718674881
 Transform:
@@ -787,25 +796,16 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   gameManager: {fileID: 1718674880}
-  inputRecorder: {fileID: 755271954}
   flowSimulation: {fileID: 1382237305}
-  flowVisualizer: {fileID: 1382237306}
-  agentRenderer: {fileID: 1382237304}
-  mainCamera: {fileID: 2057931241}
   videoFileName: laminar_demo.mp4
   videoVolume: 0.6
   spacing: 24
   panelAspectRatio: 1.778
   fadeDuration: 2
-  cursorColor: {r: 1, g: 0.4, b: 0.3, a: 0.8}
-  cursorThickness: 0.3
-  returnToConsole: 1
   consoleSceneName: Console
   endDelay: 2
-  returnFadeDuration: 2
   showDebugInfo: 0
   skipKey: 293
-  returnKey: 27
 --- !u!4 &1797351079
 Transform:
   m_ObjectHideFlags: 0

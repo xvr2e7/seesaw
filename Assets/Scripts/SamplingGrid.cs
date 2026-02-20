@@ -77,13 +77,19 @@ public class SamplingGrid : MonoBehaviour
     public Font customFont;
 
     [Tooltip("Font size for event name")]
-    public int eventNameFontSize = 22;
+    public int eventNameFontSize = 26;
+
+    [Tooltip("Font size for the guidance hint line below the pattern label")]
+    public int guidanceHintFontSize = 14;
 
     [Tooltip("Distance above grid center for event label")]
     public float eventNameOffset = 0.3f;
 
     [Tooltip("Event name color")]
-    public Color eventNameColor = new Color(0.52f, 0.54f, 0.58f, 0.80f);
+    public Color eventNameColor = new Color(0.70f, 0.72f, 0.76f, 0.92f);
+
+    [Tooltip("Guidance hint color (dimmer than pattern label)")]
+    public Color guidanceHintColor = new Color(0.50f, 0.52f, 0.56f, 0.65f);
 
     // ── Runtime state ──────────────────────────────────────────────────────────
     private Vector2 currentWorldPos;
@@ -97,6 +103,7 @@ public class SamplingGrid : MonoBehaviour
     private const int LINES_PER_BOX   = 4;
     private const int CORNERS_PER_BOX = 4;
     private GUIStyle eventNameStyle;
+    private GUIStyle guidanceHintStyle;
     private Mesh cornerMesh;
     private Material lineMaterial;
 
@@ -242,20 +249,33 @@ public class SamplingGrid : MonoBehaviour
 
     void SetupGUIStyle()
     {
+        Font resolvedFont = customFont;
+        if (resolvedFont == null)
+        {
+            resolvedFont = Font.CreateDynamicFontFromOSFont(
+                new string[] { "Space Mono", "Consolas", "Courier New", "Courier" },
+                eventNameFontSize);
+        }
+
         eventNameStyle           = new GUIStyle();
         eventNameStyle.fontSize  = eventNameFontSize;
         eventNameStyle.alignment = TextAnchor.MiddleCenter;
         eventNameStyle.normal.textColor = eventNameColor;
+        if (resolvedFont != null) eventNameStyle.font = resolvedFont;
 
-        if (customFont != null)
-            eventNameStyle.font = customFont;
-        else
+        Font hintFont = customFont;
+        if (hintFont == null)
         {
-            Font spaceMonoFont = Font.CreateDynamicFontFromOSFont("Space Mono", eventNameFontSize);
-            eventNameStyle.font = spaceMonoFont != null
-                ? spaceMonoFont
-                : Font.CreateDynamicFontFromOSFont("Consolas", eventNameFontSize);
+            hintFont = Font.CreateDynamicFontFromOSFont(
+                new string[] { "Space Mono", "Consolas", "Courier New", "Courier" },
+                guidanceHintFontSize);
         }
+
+        guidanceHintStyle           = new GUIStyle();
+        guidanceHintStyle.fontSize  = guidanceHintFontSize;
+        guidanceHintStyle.alignment = TextAnchor.UpperLeft;
+        guidanceHintStyle.normal.textColor = guidanceHintColor;
+        if (hintFont != null) guidanceHintStyle.font = hintFont;
     }
 
     Mesh CreateSquareMesh()
@@ -510,10 +530,11 @@ public class SamplingGrid : MonoBehaviour
     void OnGUI()
     {
         if (mainCamera == null) return;
+        if (GameManager.TerminalActive) return;
 
-        // Pattern label — shown when cursor overlaps an active event zone
+        // Pattern label + guidance hint — shown when cursor overlaps an active event zone
         {
-            string keyword = SamplePatternLabel();
+            var (keyword, hint) = SamplePatternLabel();
 
             if (!string.IsNullOrEmpty(keyword))
             {
@@ -527,8 +548,9 @@ public class SamplingGrid : MonoBehaviour
                 Vector3 screenPos = mainCamera.WorldToScreenPoint(worldPos);
                 screenPos.y       = Screen.height - screenPos.y;
 
-                // Left-aligned, just above the top-left dot
-                Rect rect = new Rect(screenPos.x, screenPos.y - eventNameFontSize, 220, eventNameFontSize + 4);
+                // Pattern label — left-aligned, just above the top-left dot
+                float labelY = screenPos.y - eventNameFontSize - 2f;
+                Rect rect = new Rect(screenPos.x, labelY, 260, eventNameFontSize + 4);
 
                 Color nameColor = eventNameColor;
                 if (isActive) nameColor.a *= 0.9f + Mathf.Sin(Time.time * 8f) * 0.1f;
@@ -536,6 +558,16 @@ public class SamplingGrid : MonoBehaviour
                 eventNameStyle.alignment = TextAnchor.UpperLeft;
                 GUI.Label(rect, keyword, eventNameStyle);
                 eventNameStyle.alignment = TextAnchor.MiddleCenter;
+
+                // Guidance hint line directly below the pattern label
+                if (!string.IsNullOrEmpty(hint) && guidanceHintStyle != null)
+                {
+                    Rect hintRect = new Rect(screenPos.x, labelY + eventNameFontSize + 3f, 260, guidanceHintFontSize + 4);
+                    Color hintColor = guidanceHintColor;
+                    if (isActive) hintColor.a *= 0.9f + Mathf.Sin(Time.time * 8f) * 0.1f;
+                    guidanceHintStyle.normal.textColor = hintColor;
+                    GUI.Label(hintRect, hint, guidanceHintStyle);
+                }
             }
         }
 
@@ -581,19 +613,18 @@ public class SamplingGrid : MonoBehaviour
     }
 
     /// <summary>
-    /// Returns the pattern keyword when cursor is inside an active event zone
-    /// (within 80% of radius, intensity ≥ 0.3), or null when outside all events.
-    /// Labels match the gameplay description table exactly.
+    /// Returns (keyword, hint) when cursor is inside an active event zone
+    /// (within 80% of radius, intensity ≥ 0.3), or (null, null) when outside.
     /// </summary>
-    string SamplePatternLabel()
+    (string keyword, string hint) SamplePatternLabel()
     {
-        if (classifier == null) return null;
+        if (classifier == null) return (null, null);
 
         var scheduler = classifier.scheduler;
-        if (scheduler == null) return null;
+        if (scheduler == null) return (null, null);
 
         var activeEvents = scheduler.GetActiveEvents();
-        if (activeEvents == null || activeEvents.Count == 0) return null;
+        if (activeEvents == null || activeEvents.Count == 0) return (null, null);
 
         TurbulenceEvent strongest = null;
         float bestInfluence = 0f;
@@ -602,7 +633,7 @@ public class SamplingGrid : MonoBehaviour
         {
             if (!evt.isActive || evt.currentIntensity < 0.3f) continue;
 
-            float dist          = Vector2.Distance(currentWorldPos, evt.position);
+            float dist            = Vector2.Distance(currentWorldPos, evt.position);
             float effectiveRadius = evt.radius * 0.8f;
             if (dist > effectiveRadius) continue;
 
@@ -615,17 +646,17 @@ public class SamplingGrid : MonoBehaviour
             }
         }
 
-        if (strongest == null) return null;
+        if (strongest == null) return (null, null);
 
         switch (strongest.pattern)
         {
-            case TurbulenceEvent.PatternType.Circular:    return "ASSEMBLY";
-            case TurbulenceEvent.PatternType.Scatter:     return "DISPERSAL";
-            case TurbulenceEvent.PatternType.Vortex:      return "SPIRAL";
-            case TurbulenceEvent.PatternType.Wave:        return "MARCH";
-            case TurbulenceEvent.PatternType.Oscillation: return "DISTURBANCE";
-            case TurbulenceEvent.PatternType.Cluster:     return "BLOCKADE";
-            default: return null;
+            case TurbulenceEvent.PatternType.Circular:    return ("ASSEMBLY",    "leave it");
+            case TurbulenceEvent.PatternType.Scatter:     return ("DISPERSAL",   "suppress");
+            case TurbulenceEvent.PatternType.Vortex:      return ("SPIRAL",      "leave it");
+            case TurbulenceEvent.PatternType.Wave:        return ("MARCH",       "leave it");
+            case TurbulenceEvent.PatternType.Oscillation: return ("DISTURBANCE", "suppress");
+            case TurbulenceEvent.PatternType.Cluster:     return ("BLOCKADE",    "suppress");
+            default: return (null, null);
         }
     }
 

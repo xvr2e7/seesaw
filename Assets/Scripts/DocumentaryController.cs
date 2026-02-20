@@ -5,596 +5,410 @@ using UnityEngine.SceneManagement;
 using System.Collections;
 
 /// <summary>
-/// Documentary phase controller for Laminar Flow.
-/// Shows split-screen: left = gameplay replay, right = documentary video.
+/// Documentary phase controller.
+///
+/// Layout: left panel = live simulation replay (looping), right panel = documentary video.
+/// The simulation runs with no player input and loops when a session ends.
+/// When the video ends (or F12 is pressed) the scene returns to Console.
 /// </summary>
 public class DocumentaryController : MonoBehaviour
 {
     [Header("References")]
     public GameManager gameManager;
-    public InputRecorder inputRecorder;
     public FlowSimulation flowSimulation;
-    public FlowVisualizer flowVisualizer;
-    public AgentRenderer agentRenderer; 
-    public Camera mainCamera;
-    
+
     [Header("Video")]
     public string videoFileName = "laminar_demo.mp4";
 
-    [Tooltip("Volume of the documentary video (0-1)")]
+    [Tooltip("Volume of the documentary video (0–1)")]
     [Range(0f, 1f)]
     public float videoVolume = 1f;
-    
+
     [Header("Layout")]
-    [Tooltip("Spacing between panels and from screen edges")]
+    [Tooltip("Gap between panels and from screen edges (pixels)")]
     public float spacing = 24f;
-    
+
     [Tooltip("Aspect ratio for each panel (1.778 = 16:9)")]
     public float panelAspectRatio = 1.778f;
-    
+
     [Header("Transition")]
-    public float fadeDuration = 2f;
-    
-    [Header("Replay Cursor")]
-    public Color cursorColor = new Color(1f, 0.4f, 0.3f, 0.8f);
-    public float cursorThickness = 0.3f;
-    
-    [Header("End Behavior")]
-    [Tooltip("Return to console scene after documentary ends")]
-    public bool returnToConsole = true;
-    
-    [Tooltip("Name of the console scene")]
+    public float fadeDuration = 1.5f;
+
+    [Header("End Behaviour")]
     public string consoleSceneName = "Console";
-    
+
     [Tooltip("Delay after video ends before returning to console")]
-    public float endDelay = 2f;
-    
-    [Tooltip("Fade duration when returning to console")]
-    public float returnFadeDuration = 2f;
-    
+    public float endDelay = 1f;
+
     [Header("Debug")]
     public bool showDebugInfo = false;
     public KeyCode skipKey = KeyCode.F12;
-    public KeyCode returnKey = KeyCode.F12;
-    
-    // UI
-    private Canvas canvas;
-    private RawImage leftPanel;
-    private RawImage rightPanel;
-    private Image fadeOverlay;
-    private GUIStyle docScoreStyle; // Style for convergence score
-    
-    // Video
-    private VideoPlayer videoPlayer;
-    private AudioSource videoAudioSource;
-    private RenderTexture videoRT;
-    private bool videoEnded = false;
-    
-    // Replay
+
+    // ── UI ────────────────────────────────────────────────────────────────────
+    private Canvas    canvas;
+    private RawImage  leftPanel;   // replay
+    private RawImage  rightPanel;  // video
+    private Image     fadeOverlay;
+
+    // ── Replay camera ─────────────────────────────────────────────────────────
+    private Camera        replayCamera;
     private RenderTexture replayRT;
-    private Camera replayCamera;
-    private LineRenderer cursorRing;
-    private GameObject cursorObject;
-    
-    // State
-    private bool isActive = false;
-    private float startTime;
-    private float replayDuration;
+
+    // ── Video ─────────────────────────────────────────────────────────────────
+    private VideoPlayer   videoPlayer;
+    private AudioSource   videoAudio;
+    private RenderTexture videoRT;
+    private bool          videoEnded = false;
+
+    // ── State ─────────────────────────────────────────────────────────────────
+    private bool isActive             = false;
     private bool isReturningToConsole = false;
 
-    // Video-only mode: skip gameplay replay, show only the documentary video fullscreen
-    private static bool _videoOnlyMode = false;
-    public  static void SetVideoOnlyMode() => _videoOnlyMode = true;
-    private bool isVideoOnly = false; // instance flag set in Start
-    
+    // Layout cached each frame for OnGUI label placement
+    private float _panelX, _panelY, _panelW, _panelH;
+
+    // GUI style for the score label
+    private GUIStyle _scoreLabelStyle;
+
+    // ─────────────────────────────────────────────────────────────────────────
+
     void Start()
     {
-        FindReferences();
+        if (gameManager    == null) gameManager    = FindObjectOfType<GameManager>();
+        if (flowSimulation == null) flowSimulation = FindObjectOfType<FlowSimulation>();
         CreateUI();
-        CreateVideoPlayer();
         CreateReplayCamera();
-        CreateCursor();
-
-        // Hide until needed
+        CreateVideoPlayer();
         canvas.gameObject.SetActive(false);
-
-        // Video-only mode: triggered from console WATCH button — skip gameplay, play video only
-        if (_videoOnlyMode)
-        {
-            _videoOnlyMode = false;
-            isVideoOnly = true;
-            DisableGameplaySystems();
-            leftPanel.gameObject.SetActive(false); // hide replay panel
-            StartDocumentary();
-            return;
-        }
-
-        // Subscribe to game end
-        if (gameManager != null)
-        {
-            gameManager.OnStateChanged += OnGameStateChanged;
-        }
     }
 
     void OnDestroy()
     {
-        if (gameManager != null)
-        {
-            gameManager.OnStateChanged -= OnGameStateChanged;
-        }
-        
-        if (videoPlayer != null)
-        {
-            videoPlayer.loopPointReached -= OnVideoEnded;
-        }
-        
-        if (videoRT != null) { videoRT.Release(); Destroy(videoRT); }
+        if (videoPlayer != null) videoPlayer.loopPointReached -= OnVideoEnded;
+        if (videoRT  != null) { videoRT.Release();  Destroy(videoRT);  }
         if (replayRT != null) { replayRT.Release(); Destroy(replayRT); }
     }
-    
-    void FindReferences()
-    {
-        if (gameManager == null) gameManager = FindObjectOfType<GameManager>();
-        if (inputRecorder == null) inputRecorder = FindObjectOfType<InputRecorder>();
-        if (flowSimulation == null) flowSimulation = FindObjectOfType<FlowSimulation>();
-        if (flowVisualizer == null) flowVisualizer = FindObjectOfType<FlowVisualizer>();
-        if (agentRenderer == null) agentRenderer = FindObjectOfType<AgentRenderer>();
-        if (mainCamera == null) mainCamera = Camera.main;
-    }
-    
-    void OnGameStateChanged(GameManager.GameState state)
-    {
-        if (state == GameManager.GameState.Complete)
-        {
-            StartDocumentary();
-        }
-    }
-    
-    #region Setup
-    
+
+    // ── UI Construction ───────────────────────────────────────────────────────
+
     void CreateUI()
     {
-        // Canvas
-        GameObject canvasObj = new GameObject("DocumentaryCanvas");
-        canvasObj.transform.SetParent(transform);
-        canvas = canvasObj.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 100;
-        canvasObj.AddComponent<CanvasScaler>();
-        canvasObj.AddComponent<GraphicRaycaster>();
-        
-        // Background (solid black)
-        GameObject bgObj = new GameObject("Background");
-        bgObj.transform.SetParent(canvas.transform);
-        Image bg = bgObj.AddComponent<Image>();
-        bg.color = Color.black;
-        bg.raycastTarget = false;
-        RectTransform bgRect = bgObj.GetComponent<RectTransform>();
-        bgRect.anchorMin = Vector2.zero;
-        bgRect.anchorMax = Vector2.one;
-        bgRect.offsetMin = Vector2.zero;
-        bgRect.offsetMax = Vector2.zero;
-        
-        // Left panel (replay)
-        GameObject leftObj = new GameObject("LeftPanel");
-        leftObj.transform.SetParent(canvas.transform);
-        leftPanel = leftObj.AddComponent<RawImage>();
+        var canvasGO = new GameObject("DocumentaryCanvas");
+        canvasGO.transform.SetParent(transform);
+        canvas = canvasGO.AddComponent<Canvas>();
+        canvas.renderMode   = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 200;
+        var scaler = canvasGO.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
+        canvasGO.AddComponent<GraphicRaycaster>();
+
+        // Black background
+        var bgGO = new GameObject("Background");
+        bgGO.transform.SetParent(canvas.transform, false);
+        var bgImg = bgGO.AddComponent<Image>();
+        bgImg.color = Color.black;
+        bgImg.raycastTarget = false;
+        FullRect(bgGO);
+
+        // Left panel — replay
+        var leftGO = new GameObject("LeftPanel");
+        leftGO.transform.SetParent(canvas.transform, false);
+        leftPanel = leftGO.AddComponent<RawImage>();
         leftPanel.color = Color.white;
         leftPanel.raycastTarget = false;
-        
-        // Right panel (video)
-        GameObject rightObj = new GameObject("RightPanel");
-        rightObj.transform.SetParent(canvas.transform);
-        rightPanel = rightObj.AddComponent<RawImage>();
+        ZeroRect(leftGO);
+
+        // Right panel — video
+        var rightGO = new GameObject("RightPanel");
+        rightGO.transform.SetParent(canvas.transform, false);
+        rightPanel = rightGO.AddComponent<RawImage>();
         rightPanel.color = Color.white;
         rightPanel.raycastTarget = false;
-        
-        // Fade overlay (on top)
-        GameObject fadeObj = new GameObject("FadeOverlay");
-        fadeObj.transform.SetParent(canvas.transform);
-        fadeOverlay = fadeObj.AddComponent<Image>();
+        ZeroRect(rightGO);
+
+        // Fade overlay (topmost)
+        var fadeGO = new GameObject("FadeOverlay");
+        fadeGO.transform.SetParent(canvas.transform, false);
+        fadeOverlay = fadeGO.AddComponent<Image>();
         fadeOverlay.color = Color.black;
         fadeOverlay.raycastTarget = false;
-        RectTransform fadeRect = fadeObj.GetComponent<RectTransform>();
-        fadeRect.anchorMin = Vector2.zero;
-        fadeRect.anchorMax = Vector2.one;
-        fadeRect.offsetMin = Vector2.zero;
-        fadeRect.offsetMax = Vector2.zero;
+        FullRect(fadeGO);
     }
-    
-    void CreateVideoPlayer()
-    {
-        GameObject obj = new GameObject("VideoPlayer");
-        obj.transform.SetParent(transform);
-        
-        videoPlayer = obj.AddComponent<VideoPlayer>();
-        videoPlayer.playOnAwake = false;
-        videoPlayer.isLooping = false; 
-        videoPlayer.renderMode = VideoRenderMode.RenderTexture;
-        
-        videoPlayer.loopPointReached += OnVideoEnded;
-        
-        videoPlayer.audioOutputMode = VideoAudioOutputMode.AudioSource;
 
-        videoAudioSource = obj.AddComponent<AudioSource>();
-        videoAudioSource.volume = videoVolume;
-        videoPlayer.SetTargetAudioSource(0, videoAudioSource);
-        
-        videoRT = new RenderTexture(1920, 1080, 0);
-        videoRT.name = "VideoRT";
-        videoPlayer.targetTexture = videoRT;
-        
-        string path = System.IO.Path.Combine(Application.streamingAssetsPath, videoFileName);
-        videoPlayer.url = path;
-        videoPlayer.Prepare();
+    static void FullRect(GameObject go)
+    {
+        var r = go.GetComponent<RectTransform>();
+        r.anchorMin = Vector2.zero; r.anchorMax = Vector2.one;
+        r.offsetMin = Vector2.zero; r.offsetMax = Vector2.zero;
     }
-    
+
+    // Anchor at bottom-left, size zero — UpdateLayout drives the rect each frame
+    static void ZeroRect(GameObject go)
+    {
+        var r = go.GetComponent<RectTransform>();
+        r.anchorMin = Vector2.zero; r.anchorMax = Vector2.zero;
+        r.pivot     = Vector2.zero;
+        r.anchoredPosition = Vector2.zero;
+        r.sizeDelta = Vector2.zero;
+    }
+
     void CreateReplayCamera()
     {
         replayRT = new RenderTexture(1920, 1080, 24);
         replayRT.name = "ReplayRT";
-        
-        GameObject camObj = new GameObject("ReplayCamera");
-        camObj.transform.SetParent(transform);
-        replayCamera = camObj.AddComponent<Camera>();
-        replayCamera.enabled = false;
+
+        var camGO = new GameObject("DocReplayCamera");
+        camGO.transform.SetParent(transform);
+        replayCamera = camGO.AddComponent<Camera>();
+        replayCamera.enabled       = false;
         replayCamera.targetTexture = replayRT;
-        replayCamera.clearFlags = CameraClearFlags.SolidColor;
+        replayCamera.clearFlags    = CameraClearFlags.SolidColor;
         replayCamera.backgroundColor = Color.black;
+
+        leftPanel.texture = replayRT;
     }
-    
-    void CreateCursor()
+
+    void CreateVideoPlayer()
     {
-        cursorObject = new GameObject("ReplayCursor");
-        cursorObject.transform.SetParent(transform);
-        
-        cursorRing = cursorObject.AddComponent<LineRenderer>();
-        cursorRing.useWorldSpace = true;
-        cursorRing.loop = true;
-        cursorRing.startWidth = cursorThickness;
-        cursorRing.endWidth = cursorThickness;
-        cursorRing.material = new Material(Shader.Find("Sprites/Default"));
-        cursorRing.startColor = cursorColor;
-        cursorRing.endColor = cursorColor;
-        
-        int segments = 32;
-        cursorRing.positionCount = segments;
-        
-        cursorObject.SetActive(false);
+        var vpGO = new GameObject("VideoPlayer");
+        vpGO.transform.SetParent(transform);
+
+        videoPlayer = vpGO.AddComponent<VideoPlayer>();
+        videoPlayer.playOnAwake     = false;
+        videoPlayer.isLooping       = false;
+        videoPlayer.renderMode      = VideoRenderMode.RenderTexture;
+        videoPlayer.audioOutputMode = VideoAudioOutputMode.AudioSource;
+
+        videoAudio             = vpGO.AddComponent<AudioSource>();
+        videoAudio.playOnAwake = false;
+        videoAudio.volume      = videoVolume;
+        videoPlayer.SetTargetAudioSource(0, videoAudio);
+
+        videoRT                   = new RenderTexture(1920, 1080, 0);
+        videoRT.name              = "DocVideoRT";
+        videoPlayer.targetTexture = videoRT;
+        rightPanel.texture        = videoRT;
+
+        string path = System.IO.Path.Combine(Application.streamingAssetsPath, videoFileName);
+        videoPlayer.url = path;
+        videoPlayer.loopPointReached += OnVideoEnded;
+        videoPlayer.Prepare();
     }
-    
-    #endregion
-    
-    #region Documentary Control
-    
+
+    // ── Public entry point ────────────────────────────────────────────────────
+
     public void StartDocumentary()
     {
         if (isActive) return;
-
-        Debug.Log("[Documentary] Starting documentary phase");
-
-        if (inputRecorder != null && inputRecorder.RecordedFrames.Count > 0)
-        {
-            replayDuration = inputRecorder.GetRecordingDuration();
-        }
-        else
-        {
-            replayDuration = 60f;
-        }
-
-        videoEnded = false;
-        StartCoroutine(TransitionIn());
+        StartCoroutine(DocumentarySequence());
     }
 
-    IEnumerator TransitionIn()
+    // ── Core sequence ─────────────────────────────────────────────────────────
+
+    IEnumerator DocumentarySequence()
     {
+        isActive = true;
         canvas.gameObject.SetActive(true);
         fadeOverlay.color = Color.black;
-        
-        yield return new WaitForSeconds(0.2f);
-        
-        DisableGameplaySystems();
-        
-        if (flowVisualizer != null) flowVisualizer.enabled = true;
-        if (agentRenderer != null) agentRenderer.enabled = true;
-        
-        if (mainCamera != null)
+
+        DisablePlayerSystems();
+
+        // Mirror main camera settings onto replay camera
+        var mainCam = Camera.main;
+        if (mainCam != null)
         {
-            replayCamera.CopyFrom(mainCamera);
-            replayCamera.targetTexture = replayRT;
-            replayCamera.clearFlags = CameraClearFlags.SolidColor;
+            replayCamera.CopyFrom(mainCam);
+            replayCamera.targetTexture   = replayRT;
+            replayCamera.clearFlags      = CameraClearFlags.SolidColor;
             replayCamera.backgroundColor = Color.black;
         }
-        
-        leftPanel.texture = replayRT;
-        rightPanel.texture = videoRT;
-        
-        isActive = true;
-        startTime = Time.time;
-        cursorObject.SetActive(true);
-        
-        if (videoPlayer.isPrepared)
+
+        // Restart simulation in looping replay mode
+        if (gameManager != null)
         {
-            videoPlayer.Play();
+            gameManager.IsInDocumentaryReplay = true;
+            gameManager.RestartForDocumentaryReplay();
         }
-        
-        float elapsed = 0f;
-        while (elapsed < fadeDuration)
-        {
-            elapsed += Time.deltaTime;
-            float t = elapsed / fadeDuration;
-            fadeOverlay.color = new Color(0, 0, 0, 1f - t);
-            yield return null;
-        }
-        fadeOverlay.color = new Color(0, 0, 0, 0);
+
+        // Wait for video to finish preparing
+        if (!videoPlayer.isPrepared)
+            yield return new WaitUntil(() => videoPlayer.isPrepared);
+
+        videoPlayer.Play();
+
+        // Fade in from black
+        yield return StartCoroutine(FadeTo(0f, fadeDuration));
+
+        // Wait for video end or F12 skip
+        yield return new WaitUntil(() => videoEnded || isReturningToConsole);
+
+        if (!isReturningToConsole)
+            StartCoroutine(FinishAndReturn());
     }
-    
-    void DisableGameplaySystems()
+
+    void OnVideoEnded(VideoPlayer vp)
     {
-        if (flowSimulation != null) flowSimulation.enabled = false;
-        
-        var scheduler = FindObjectOfType<TurbulentEventScheduler>();
-        if (scheduler != null) scheduler.enabled = false;
-        
+        if (!isActive) return;
+        videoEnded = true;
+        StartCoroutine(FinishAndReturn());
+    }
+
+    IEnumerator FinishAndReturn()
+    {
+        if (isReturningToConsole) yield break;
+        isReturningToConsole = true;
+
+        yield return new WaitForSeconds(endDelay);
+        yield return StartCoroutine(FadeTo(1f, fadeDuration));
+
+        videoPlayer.Stop();
+
+        if (gameManager != null)
+            gameManager.IsInDocumentaryReplay = false;
+
+        ConsoleController.SetReturningFromDocumentary();
+
+        var op = SceneManager.LoadSceneAsync(consoleSceneName, LoadSceneMode.Single);
+        op.allowSceneActivation = false;
+        while (op.progress < 0.9f) yield return null;
+        op.allowSceneActivation = true;
+    }
+
+    // ── Per-frame ─────────────────────────────────────────────────────────────
+
+    void Update()
+    {
+        if (videoAudio != null) videoAudio.volume = videoVolume;
+
+        // F12 skips documentary and returns immediately to Console
+        if (isActive && !isReturningToConsole && Input.GetKeyDown(skipKey))
+            StartCoroutine(FinishAndReturn());
+
+        if (!isActive) return;
+
+        UpdateLayout();
+
+        // Render the live simulation into the replay panel each frame
+        if (replayCamera != null)
+        {
+            replayCamera.enabled = true;
+            replayCamera.Render();
+            replayCamera.enabled = false;
+        }
+    }
+
+    void UpdateLayout()
+    {
+        float sw = Screen.width;
+        float sh = Screen.height;
+
+        float availW = sw - spacing * 3f;
+        float availH = sh - spacing * 2f;
+
+        float panelW = availW / 2f;
+        float panelH = panelW / panelAspectRatio;
+
+        if (panelH > availH)
+        {
+            panelH = availH;
+            panelW = panelH * panelAspectRatio;
+        }
+
+        float totalW = panelW * 2f + spacing;
+        float startX = (sw - totalW) / 2f;
+        float startY = (sh - panelH) / 2f;
+
+        SetPanelRect(leftPanel,  startX,                   startY, panelW, panelH);
+        SetPanelRect(rightPanel, startX + panelW + spacing, startY, panelW, panelH);
+
+        // Cache for OnGUI label placement
+        _panelX = startX; _panelY = startY; _panelW = panelW; _panelH = panelH;
+    }
+
+    static void SetPanelRect(RawImage img, float x, float y, float w, float h)
+    {
+        var r = img.GetComponent<RectTransform>();
+        r.anchoredPosition = new Vector2(x, y);
+        r.sizeDelta        = new Vector2(w, h);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    void DisablePlayerSystems()
+    {
         var playerTool = FindObjectOfType<PlayerToolController>();
         if (playerTool != null)
         {
             playerTool.SetToolEnabled(false);
             playerTool.SetDocumentaryPhase(true);
         }
-        
-        var cameraController = FindObjectOfType<CameraController>();
-        if (cameraController != null) cameraController.enabled = false;
-        
-        var turbulenceUI = FindObjectOfType<TurbulenceIndicatorUI>();
-        if (turbulenceUI != null) turbulenceUI.enabled = false;
-        
-        var gameStateUI = FindObjectOfType<GameStateUI>();
-        if (gameStateUI != null) gameStateUI.enabled = false;
-        
+
+        // Hide the sampling grid (dot cursor + sub-boxes + labels)
+        var samplingGrid = FindObjectOfType<SamplingGrid>();
+        if (samplingGrid != null) samplingGrid.gameObject.SetActive(false);
+
+        var cam = FindObjectOfType<CameraController>();
+        if (cam != null) cam.enabled = false;
+
+        var turbUI = FindObjectOfType<TurbulenceIndicatorUI>();
+        if (turbUI != null) turbUI.enabled = false;
+
+        var gsUI = FindObjectOfType<GameStateUI>();
+        if (gsUI != null) gsUI.enabled = false;
+
         var soundscape = FindObjectOfType<AmbientSoundscapeController>();
         if (soundscape != null) soundscape.FadeToSilence(1f);
     }
-    
-    void OnVideoEnded(VideoPlayer vp)
+
+    IEnumerator FadeTo(float target, float dur)
     {
-        videoEnded = true;
-        if (returnToConsole)
-        {
-            StartCoroutine(ReturnToConsoleAfterDelay());
-        }
-    }
-    
-    IEnumerator ReturnToConsoleAfterDelay()
-    {
-        yield return new WaitForSeconds(endDelay);
-        ReturnToConsole();
-    }
-    
-    public void ReturnToConsole()
-    {
-        if (isReturningToConsole) return;
-        isReturningToConsole = true;
-        StartCoroutine(TransitionToConsole());
-    }
-    
-    IEnumerator TransitionToConsole()
-    {
+        float start = fadeOverlay.color.a;
         float elapsed = 0f;
-        while (elapsed < returnFadeDuration)
+        while (elapsed < dur)
         {
             elapsed += Time.deltaTime;
-            float t = elapsed / returnFadeDuration;
-            fadeOverlay.color = new Color(0, 0, 0, t);
+            fadeOverlay.color = new Color(0f, 0f, 0f,
+                Mathf.Lerp(start, target, Mathf.SmoothStep(0f, 1f, elapsed / dur)));
             yield return null;
         }
-        fadeOverlay.color = Color.black;
-        
-        yield return null;
-        
-        if (videoPlayer != null) videoPlayer.Stop();
-        
-        ConsoleController.SetReturningFromDocumentary();
-        
-        AsyncOperation loadOp = SceneManager.LoadSceneAsync(consoleSceneName, LoadSceneMode.Single);
-        loadOp.allowSceneActivation = false;
-        while (loadOp.progress < 0.9f) yield return null;
-        loadOp.allowSceneActivation = true;
+        fadeOverlay.color = new Color(0f, 0f, 0f, target);
     }
-    
-    #endregion
-    
-    #region Update
-    
-    void Update()
-    {
-        if (!isActive && Input.GetKeyDown(skipKey))
-        {
-            if (gameManager != null && gameManager.IsPlaying) gameManager.ForceEndSession();
-            if (inputRecorder != null && inputRecorder.IsRecording) inputRecorder.StopRecording();
-            StartDocumentary();
-        }
-        
-        if (isActive && Input.GetKeyDown(returnKey)) ReturnToConsole();
-        
-        if (videoAudioSource != null && videoAudioSource.volume != videoVolume)
-            videoAudioSource.volume = videoVolume;
 
-        if (!isActive) return;
-        
-        UpdateLayout();
-        UpdateReplay();
-    }
-    
-    void UpdateLayout()
-    {
-        float sw = Screen.width;
-        float sh = Screen.height;
-
-        if (isVideoOnly)
-        {
-            // Full-screen video, letterboxed to preserve aspect ratio
-            float availableHeight = sh - (spacing * 2f);
-            float panelWidth  = availableHeight * panelAspectRatio;
-            if (panelWidth > sw - spacing * 2f)
-            {
-                panelWidth  = sw - spacing * 2f;
-                availableHeight = panelWidth / panelAspectRatio;
-            }
-            float startX = (sw - panelWidth)  / 2f;
-            float startY = (sh - availableHeight) / 2f;
-
-            RectTransform rightRect = rightPanel.GetComponent<RectTransform>();
-            rightRect.anchorMin        = Vector2.zero;
-            rightRect.anchorMax        = Vector2.zero;
-            rightRect.pivot            = Vector2.zero;
-            rightRect.anchoredPosition = new Vector2(startX, startY);
-            rightRect.sizeDelta        = new Vector2(panelWidth, availableHeight);
-            return;
-        }
-
-        float availableWidth = sw - (spacing * 3f);
-        float availableHeightSplit = sh - (spacing * 2f);
-
-        float panelWidthSplit = availableWidth / 2f;
-        float panelHeight = panelWidthSplit / panelAspectRatio;
-
-        if (panelHeight > availableHeightSplit)
-        {
-            panelHeight     = availableHeightSplit;
-            panelWidthSplit = panelHeight * panelAspectRatio;
-        }
-
-        float totalWidth = (panelWidthSplit * 2f) + spacing;
-        float startXSplit = (sw - totalWidth) / 2f;
-        float startYSplit = (sh - panelHeight) / 2f;
-
-        RectTransform leftRect = leftPanel.GetComponent<RectTransform>();
-        leftRect.anchorMin = Vector2.zero;
-        leftRect.anchorMax = Vector2.zero;
-        leftRect.pivot = Vector2.zero;
-        leftRect.anchoredPosition = new Vector2(startXSplit, startYSplit);
-        leftRect.sizeDelta = new Vector2(panelWidthSplit, panelHeight);
-
-        RectTransform rightRect2 = rightPanel.GetComponent<RectTransform>();
-        rightRect2.anchorMin        = Vector2.zero;
-        rightRect2.anchorMax        = Vector2.zero;
-        rightRect2.pivot            = Vector2.zero;
-        rightRect2.anchoredPosition = new Vector2(startXSplit + panelWidthSplit + spacing, startYSplit);
-        rightRect2.sizeDelta        = new Vector2(panelWidthSplit, panelHeight);
-    }
-    
-    void UpdateReplay()
-    {
-        if (inputRecorder == null || inputRecorder.RecordedFrames.Count == 0) return;
-        
-        float elapsed = Time.time - startTime;
-        InputFrame frame = inputRecorder.GetInterpolatedFrameAtTime(elapsed);
-        
-        if (flowSimulation != null && frame.agentPositions != null)
-        {
-            Vector2[] simPositions = flowSimulation.Positions;
-            if (simPositions != null && simPositions.Length == frame.agentPositions.Length)
-            {
-                System.Array.Copy(frame.agentPositions, simPositions, simPositions.Length);
-            }
-        }
-        
-        if (replayCamera != null)
-        {
-            replayCamera.transform.position = new Vector3(frame.cameraPosition.x, frame.cameraPosition.y, -10f);
-            if (frame.cameraViewport.height > 0)
-            {
-                replayCamera.orthographicSize = frame.cameraViewport.height / 2f;
-            }
-        }
-
-        UpdateCursor(frame);
-        
-        replayCamera.enabled = true;
-        replayCamera.Render();
-        replayCamera.enabled = false;
-    }
-    
-    void UpdateCursor(InputFrame frame)
-    {
-        if (cursorRing == null) return;
-        
-        Color c = frame.toolActive ? cursorColor : new Color(cursorColor.r, cursorColor.g, cursorColor.b, 0.3f);
-        cursorRing.startColor = c;
-        cursorRing.endColor = c;
-        
-        float radius = frame.toolRadius;
-        int segments = cursorRing.positionCount;
-        
-        for (int i = 0; i < segments; i++)
-        {
-            float angle = (float)i / segments * Mathf.PI * 2f;
-            Vector3 pos = new Vector3(
-                frame.cursorWorldPosition.x + Mathf.Cos(angle) * radius,
-                frame.cursorWorldPosition.y + Mathf.Sin(angle) * radius,
-                -5f
-            );
-            cursorRing.SetPosition(i, pos);
-        }
-    }
-    
-    #endregion
-    
     void OnGUI()
     {
         if (!isActive) return;
-        
-        // Draw Convergence Score
-        DrawConvergenceScore();
 
-        if (!showDebugInfo) return;
-        
-        GUILayout.BeginArea(new Rect(10, 10, 250, 150));
-        GUI.color = new Color(0, 0, 0, 0.8f);
-        GUI.DrawTexture(new Rect(0, 0, 250, 150), Texture2D.whiteTexture);
-        GUI.color = Color.white;
-        
-        GUILayout.Label("=== DOCUMENTARY ===");
-        GUILayout.Label($"Elapsed: {(Time.time - startTime):F1}s");
-        GUILayout.Label($"Replay Duration: {replayDuration:F1}s");
-        GUILayout.EndArea();
-    }
-
-    void DrawConvergenceScore()
-    {
-        if (inputRecorder == null || leftPanel == null) return;
-        
-        if (docScoreStyle == null)
+        // ── Convergence score above the left (replay) panel ───────────────────
+        if (_panelW > 0f && flowSimulation != null)
         {
-            docScoreStyle = new GUIStyle(GUI.skin.label);
-            docScoreStyle.fontSize = 20;
-            docScoreStyle.fontStyle = FontStyle.Bold;
-            docScoreStyle.alignment = TextAnchor.MiddleCenter;
-            docScoreStyle.normal.textColor = new Color(0.2f, 0.8f, 0.4f, 1f); // Greenish
+            if (_scoreLabelStyle == null)
+            {
+                Font f = Font.CreateDynamicFontFromOSFont(
+                    new string[] { "Space Mono", "Consolas", "Courier New", "Courier" }, 13);
+                _scoreLabelStyle = new GUIStyle(GUI.skin.label)
+                {
+                    fontSize  = 13,
+                    alignment = TextAnchor.UpperLeft,
+                    wordWrap  = false
+                };
+                if (f != null) _scoreLabelStyle.font = f;
+            }
+
+            float divergence  = flowSimulation.CurrentDivergence;
+            float convergence = Mathf.Clamp01(1f - divergence * 0.5f);
+            string label = $"MEAN CONVERGENCE   {convergence:F3}";
+
+            // GUI Y is measured from top; panel is measured from bottom
+            float guiY = Screen.height - (_panelY + _panelH) - 22f;
+            _scoreLabelStyle.normal.textColor = new Color(0.50f, 0.52f, 0.56f, 0.80f);
+            GUI.Label(new Rect(_panelX, guiY, _panelW, 20f), label, _scoreLabelStyle);
         }
 
-        float elapsed = Time.time - startTime;
-        InputFrame frame = inputRecorder.GetInterpolatedFrameAtTime(elapsed);
-        
-        // Calculate Convergence Score (Inverse of Divergence)
-        // Divergence is roughly 0-2+. Convergence should be 0-1 or 0-100.
-        // Formula: 1 / (1 + divergence) ensures it starts at 1 (when div=0) and decreases.
-        float divergence = frame.currentDivergence;
-        float convergence = 1.0f / (1.0f + divergence);
-        
-        // Get position above the Left Panel (Replay)
-        Vector3[] corners = new Vector3[4];
-        leftPanel.GetComponent<RectTransform>().GetWorldCorners(corners);
-        
-        // Invert Y for GUI.Label (WorldCorners starts bottom-left, GUI starts top-left)
-        float topY = corners[1].y; 
-        float guiY = Screen.height - topY;
-        
-        float centerX = (corners[0].x + corners[2].x) * 0.5f;
-        float width = corners[2].x - corners[0].x;
-        
-        string text = $"CONVERGENCE SCORE: {convergence * 100f:F0}%";
-        GUI.Label(new Rect(centerX - width/2f, guiY - 40f, width, 30f), text, docScoreStyle);
+        if (!showDebugInfo) return;
+        GUILayout.BeginArea(new Rect(10, 10, 280, 80));
+        GUILayout.Label($"[Documentary] video ended={videoEnded}");
+        GUILayout.Label($"returning={isReturningToConsole}");
+        GUILayout.Label($"video time={videoPlayer.time:F1}s   F12=skip");
+        GUILayout.EndArea();
     }
 }

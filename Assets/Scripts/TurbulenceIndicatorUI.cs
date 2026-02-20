@@ -375,6 +375,7 @@ public class TurbulenceIndicatorUI : MonoBehaviour
     void OnGUI()
     {
         if (isPaused) return;
+        if (GameManager.TerminalActive) return;
         InitializeStyles();
 
         // Draw mini-map radar

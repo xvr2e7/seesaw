@@ -1,8 +1,10 @@
 using UnityEngine;
 
 /// <summary>
-/// Tracks player performance and adjusts tool capabilities dynamically.
-/// Controls grid density as reward/punishment based on flow coherence.
+/// Tracks accumulated player dampening and grows/shrinks the tool grid.
+/// Grid starts at 3×3 / small radius. Sustained suppression grows it to 5×5,
+/// then 7×7, and also expands the physical radius in two additional steps.
+/// Active turbulence events erode the accumulator — fall behind and the grid shrinks.
 /// </summary>
 public class PerformanceTracker : MonoBehaviour
 {
@@ -10,232 +12,181 @@ public class PerformanceTracker : MonoBehaviour
     public FlowSimulation flowSimulation;
     public TurbulentEventScheduler scheduler;
 
-    [Header("Grid Density Settings")]
-    [Tooltip("Minimum grid size (stressed)")]
-    public int minGridSize = 3;
+    [Header("Growth Thresholds (accumulated dampening)")]
+    [Tooltip("Dampening needed to grow from 3×3 small → 3×3 medium radius")]
+    public float threshold1 = 15f;
 
-    [Tooltip("Default grid size (baseline)")]
-    public int defaultGridSize = 5;
+    [Tooltip("Dampening needed to grow to 5×5 density")]
+    public float threshold2 = 35f;
 
-    [Tooltip("Maximum grid size (excelling)")]
-    public int maxGridSize = 7;
+    [Tooltip("Dampening needed to grow to 5×5 + larger radius")]
+    public float threshold3 = 65f;
 
-    [Header("Performance Thresholds")]
-    [Tooltip("Coherence threshold for upgrading grid")]
-    [Range(0.6f, 0.9f)]
-    public float upgradeThreshold = 0.75f;
+    [Tooltip("Dampening needed to grow to 7×7 density")]
+    public float threshold4 = 100f;
 
-    [Tooltip("Coherence threshold for downgrading grid")]
-    [Range(0.2f, 0.5f)]
-    public float downgradeThreshold = 0.35f;
+    [Tooltip("Dampening needed to grow to 7×7 + largest radius")]
+    public float threshold5 = 150f;
 
-    [Tooltip("Time required at threshold before changing grid size")]
-    [Range(2f, 10f)]
-    public float changeDelay = 4f;
+    [Header("Radius Per Stage")]
+    [Tooltip("Stage 0 — starting radius")]
+    public float radius0 = 5f;
 
-    [Header("Smoothing")]
-    [Tooltip("How quickly grid size transitions")]
-    [Range(0.5f, 3f)]
-    public float transitionSpeed = 1.5f;
+    [Tooltip("Stage 1 — first radius expansion")]
+    public float radius1 = 8f;
 
-    // Runtime state
-    private int targetGridSize;
-    private float currentGridSizeFloat;
-    private float timeAboveUpgradeThreshold;
-    private float timeBelowDowngradeThreshold;
+    [Tooltip("Stage 2 — 5×5 radius")]
+    public float radius2 = 10f;
 
-    // Performance metrics
-    private float currentCoherence;
-    private float turbulencePressure;
+    [Tooltip("Stage 3 — second radius expansion")]
+    public float radius3 = 14f;
 
-    // Public accessors
-    public int CurrentGridSize => Mathf.RoundToInt(currentGridSizeFloat);
-    public float GridSizeProgress => currentGridSizeFloat; // For smooth interpolation
-    public float CurrentCoherence => currentCoherence;
-    public float TurbulencePressure => turbulencePressure;
+    [Tooltip("Stage 4 — 7×7 radius")]
+    public float radius4 = 18f;
+
+    [Tooltip("Stage 5 — final radius")]
+    public float radius5 = 22f;
+
+    [Header("Erosion")]
+    [Tooltip("How strongly active turbulence erodes the dampening accumulator per unit of strength×intensity per second. Tune against dampening accumulation rate.")]
+    [Range(0f, 2f)]
+    public float turbulenceErodeRate = 0.3f;
+
+    [Header("Transition")]
+    [Tooltip("How quickly grid size float interpolates to target")]
+    [Range(0.5f, 4f)]
+    public float transitionSpeed = 2f;
+
+    [Tooltip("How quickly the physical radius interpolates to target")]
+    [Range(0.5f, 4f)]
+    public float radiusTransitionSpeed = 1.5f;
+
+    // ── Runtime state ──────────────────────────────────────────────────────────
+    private float _accumulatedDampening = 0f;
+    private int   _stage = 0;              // 0–5
+    private int   _targetGridSize = 3;
+    private float _currentGridSizeFloat = 3f;
+    private float _targetRadius;
+    private float _currentRadius;
+
+    // ── Public accessors ───────────────────────────────────────────────────────
+    public int   CurrentGridSize    => Mathf.RoundToInt(_currentGridSizeFloat);
+    public float GridSizeProgress   => _currentGridSizeFloat;
+    public float CurrentRadius      => _currentRadius;
+    public float AccumulatedDampening => _accumulatedDampening;
+    public int   Stage              => _stage;
+
+    // Legacy accessors kept for anything still referencing them
+    public float CurrentCoherence   => 1f;
+    public float TurbulencePressure => 0f;
 
     void Start()
     {
-        ValidateReferences();
-
-        // Initialize to default
-        targetGridSize = defaultGridSize;
-        currentGridSizeFloat = defaultGridSize;
-    }
-
-    void ValidateReferences()
-    {
         if (flowSimulation == null)
             flowSimulation = FindObjectOfType<FlowSimulation>();
-
         if (scheduler == null)
             scheduler = FindObjectOfType<TurbulentEventScheduler>();
 
-        if (flowSimulation == null)
-            Debug.LogWarning("[PerformanceTracker] No FlowSimulation found!");
-
-        if (scheduler == null)
-            Debug.LogWarning("[PerformanceTracker] No TurbulentEventScheduler found!");
+        _targetRadius        = radius0;
+        _currentRadius       = radius0;
+        _currentGridSizeFloat = 3f;
+        _targetGridSize      = 3;
     }
 
     void Update()
     {
         float dt = Time.deltaTime;
 
-        UpdatePerformanceMetrics();
-        UpdateGridSizeTarget(dt);
-        UpdateGridSizeSmooth(dt);
+        // Pull dampening reported this frame from FlowSimulation
+        if (flowSimulation != null)
+        {
+            float reported = flowSimulation.ConsumeReportedDampening();
+            _accumulatedDampening += reported;
+        }
+
+        // Active turbulence erodes the accumulator
+        if (scheduler != null && turbulenceErodeRate > 0f)
+        {
+            float pressure = 0f;
+            foreach (var evt in scheduler.GetActiveEvents())
+                if (evt.isActive) pressure += evt.strength * evt.currentIntensity;
+
+            _accumulatedDampening -= pressure * turbulenceErodeRate * dt;
+            _accumulatedDampening  = Mathf.Max(0f, _accumulatedDampening);
+        }
+
+        EvaluateStage();
+        SmoothTransition(dt);
     }
 
-    void UpdatePerformanceMetrics()
+    void EvaluateStage()
     {
-        // Calculate flow coherence (simplified)
-        if (flowSimulation != null && flowSimulation.Velocities != null)
+        int newStage;
+
+        if      (_accumulatedDampening >= threshold5) newStage = 5;
+        else if (_accumulatedDampening >= threshold4) newStage = 4;
+        else if (_accumulatedDampening >= threshold3) newStage = 3;
+        else if (_accumulatedDampening >= threshold2) newStage = 2;
+        else if (_accumulatedDampening >= threshold1) newStage = 1;
+        else                                          newStage = 0;
+
+        if (newStage == _stage) return;
+
+        _stage = newStage;
+
+        _targetGridSize = _stage switch
         {
-            currentCoherence = CalculateFlowCoherence();
-        }
+            0 => 3,
+            1 => 3,
+            2 => 5,
+            3 => 5,
+            4 => 7,
+            5 => 7,
+            _ => 7
+        };
 
-        // Calculate turbulence pressure
-        if (scheduler != null)
+        _targetRadius = _stage switch
         {
-            var activeEvents = scheduler.GetActiveEvents();
-            turbulencePressure = 0f;
-
-            foreach (var evt in activeEvents)
-            {
-                if (evt.isActive)
-                {
-                    turbulencePressure += evt.strength * evt.currentIntensity;
-                }
-            }
-
-            // Normalize to 0-1 range (assuming max ~300 total strength)
-            turbulencePressure = Mathf.Clamp01(turbulencePressure / 300f);
-        }
+            0 => radius0,
+            1 => radius1,
+            2 => radius2,
+            3 => radius3,
+            4 => radius4,
+            5 => radius5,
+            _ => radius5
+        };
     }
 
-    float CalculateFlowCoherence()
+    void SmoothTransition(float dt)
     {
-        // Calculate how aligned the flow field is
-        // High coherence = laminar, low coherence = turbulent
-
-        Vector2[] velocities = flowSimulation.Velocities;
-        int count = flowSimulation.AgentCount;
-
-        if (count == 0) return 1f;
-
-        // Sample subset for performance (every 10th agent)
-        int sampleCount = Mathf.Max(1, count / 10);
-        float totalSpeed = 0f;
-        Vector2 meanDirection = Vector2.zero;
-
-        for (int i = 0; i < count; i += 10)
-        {
-            float speed = velocities[i].magnitude;
-            totalSpeed += speed;
-
-            if (speed > 0.1f)
-            {
-                meanDirection += velocities[i] / speed; // Normalized direction
-            }
-        }
-
-        if (sampleCount == 0) return 1f;
-
-        // Calculate alignment with mean direction
-        meanDirection /= sampleCount;
-        float meanAlignment = meanDirection.magnitude / Mathf.Max(1f, sampleCount);
-
-        // Higher alignment = higher coherence
-        return Mathf.Clamp01(meanAlignment);
+        _currentGridSizeFloat = Mathf.Lerp(_currentGridSizeFloat, _targetGridSize, dt * transitionSpeed);
+        _currentRadius        = Mathf.Lerp(_currentRadius,        _targetRadius,   dt * radiusTransitionSpeed);
     }
 
-    void UpdateGridSizeTarget(float dt)
+    /// <summary>Force a specific stage (for testing).</summary>
+    public void SetStage(int stage)
     {
-        // Check if we should upgrade
-        if (currentCoherence >= upgradeThreshold && targetGridSize < maxGridSize)
+        _stage = Mathf.Clamp(stage, 0, 5);
+        _targetGridSize = _stage switch { 2 or 3 => 5, >= 4 => 7, _ => 3 };
+        _targetRadius   = _stage switch
         {
-            timeAboveUpgradeThreshold += dt;
-            timeBelowDowngradeThreshold = 0f;
-
-            if (timeAboveUpgradeThreshold >= changeDelay)
-            {
-                targetGridSize = Mathf.Min(targetGridSize + 2, maxGridSize); // Jump by 2 (3→5, 5→7)
-                timeAboveUpgradeThreshold = 0f;
-            }
-        }
-        // Check if we should downgrade
-        else if (currentCoherence <= downgradeThreshold && targetGridSize > minGridSize)
-        {
-            timeBelowDowngradeThreshold += dt;
-            timeAboveUpgradeThreshold = 0f;
-
-            if (timeBelowDowngradeThreshold >= changeDelay)
-            {
-                targetGridSize = Mathf.Max(targetGridSize - 2, minGridSize); // Jump by 2 (7→5, 5→3)
-                timeBelowDowngradeThreshold = 0f;
-            }
-        }
-        // In middle zone - reset timers
-        else
-        {
-            timeAboveUpgradeThreshold = 0f;
-            timeBelowDowngradeThreshold = 0f;
-        }
-
-        // Additional pressure from high turbulence
-        if (turbulencePressure > 0.7f && targetGridSize > minGridSize)
-        {
-            // High turbulence pressure can force downgrade faster
-            timeBelowDowngradeThreshold += dt * turbulencePressure;
-        }
+            1 => radius1, 2 => radius2, 3 => radius3,
+            4 => radius4, 5 => radius5, _ => radius0
+        };
     }
 
-    void UpdateGridSizeSmooth(float dt)
-    {
-        // Smooth interpolation toward target
-        currentGridSizeFloat = Mathf.Lerp(
-            currentGridSizeFloat,
-            targetGridSize,
-            dt * transitionSpeed
-        );
-    }
-
-    /// <summary>
-    /// Force grid size to specific value (for testing or special events)
-    /// </summary>
-    public void SetGridSize(int size)
-    {
-        targetGridSize = Mathf.Clamp(size, minGridSize, maxGridSize);
-        currentGridSizeFloat = targetGridSize;
-    }
-
-    /// <summary>
-    /// Reset to baseline performance
-    /// </summary>
     public void ResetPerformance()
     {
-        targetGridSize = defaultGridSize;
-        currentGridSizeFloat = defaultGridSize;
-        timeAboveUpgradeThreshold = 0f;
-        timeBelowDowngradeThreshold = 0f;
+        _accumulatedDampening = 0f;
+        _stage                = 0;
+        _targetGridSize       = 3;
+        _targetRadius         = radius0;
+        _currentGridSizeFloat = 3f;
+        _currentRadius        = radius0;
     }
 
-    /// <summary>
-    /// Get progress toward next upgrade (0 to 1)
-    /// </summary>
-    public float GetUpgradeProgress()
-    {
-        if (targetGridSize >= maxGridSize) return 0f;
-        return timeAboveUpgradeThreshold / changeDelay;
-    }
-
-    /// <summary>
-    /// Get progress toward next downgrade (0 to 1)
-    /// </summary>
-    public float GetDowngradeProgress()
-    {
-        if (targetGridSize <= minGridSize) return 0f;
-        return timeBelowDowngradeThreshold / changeDelay;
-    }
+    // Legacy stubs
+    public float GetUpgradeProgress()   => 0f;
+    public float GetDowngradeProgress() => 0f;
+    public void  SetGridSize(int size)  { }
 }

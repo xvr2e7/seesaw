@@ -103,10 +103,13 @@ public class PlayerToolController : MonoBehaviour
     {
         ValidateReferences();
         AutoCreateComponents();
-        _currentRadius = scanRadius;
+        _currentRadius = performanceTracker != null ? performanceTracker.CurrentRadius : scanRadius;
 
         if (samplingGrid != null)
+        {
+            samplingGrid.SetRadius(_currentRadius);
             samplingGrid.SetActiveTool((int)_activeTool);
+        }
     }
 
     void ValidateReferences()
@@ -175,7 +178,7 @@ public class PlayerToolController : MonoBehaviour
         _firedThisFrame = false;
 
         UpdateWorldPosition();
-        UpdateScrollWheel();
+        UpdateTrackerRadius();
         HandleToolSwitch();
         TickCooldowns();
 
@@ -199,20 +202,17 @@ public class PlayerToolController : MonoBehaviour
         _worldPos        = new Vector2(worldPos.x, worldPos.y);
     }
 
-    void UpdateScrollWheel()
+    void UpdateTrackerRadius()
     {
-        float scroll = Input.mouseScrollDelta.y;
-        if (Mathf.Abs(scroll) > 0.01f)
-        {
-            _currentRadius += scroll * scrollSensitivity;
+        if (performanceTracker == null) return;
 
-            // Cap LOCK to its max radius (it's surgical — don't let scroll expand it)
-            float cap = _activeTool == ToolType.Lock ? lockRadius : maxRadius;
-            _currentRadius = Mathf.Clamp(_currentRadius, minRadius, cap);
+        float trackerRadius = performanceTracker.CurrentRadius;
 
-            if (samplingGrid != null)
-                samplingGrid.SetRadius(_currentRadius);
-        }
+        // LOCK keeps its fixed small radius; SCAN/PULSE use the tracker-driven radius
+        _currentRadius = _activeTool == ToolType.Lock ? lockRadius : trackerRadius;
+
+        if (samplingGrid != null)
+            samplingGrid.SetRadius(_currentRadius);
     }
 
     void HandleToolSwitch()
@@ -234,11 +234,11 @@ public class PlayerToolController : MonoBehaviour
 
         _activeTool = requested;
 
+        float trackerRadius = performanceTracker != null ? performanceTracker.CurrentRadius : scanRadius;
         _currentRadius = _activeTool switch
         {
-            ToolType.Pulse => pulseRadius,
-            ToolType.Lock  => lockRadius,
-            _              => scanRadius
+            ToolType.Lock => lockRadius,
+            _             => trackerRadius
         };
 
         if (samplingGrid != null)

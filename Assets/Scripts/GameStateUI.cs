@@ -41,18 +41,14 @@ public class GameStateUI : MonoBehaviour
     public float fadeOutDuration = 1f;
 
     [Header("Guidance Overlay")]
-    [Tooltip("Phase A message, shown t=3-10s")]
-    public string guidancePhaseA  = "observe the field";
-    [Tooltip("Phase B message, shown t=11-20s")]
-    public string guidancePhaseB  = "move cursor  ·  hold to act";
-    [Tooltip("Phase C1 — SCAN tool hint, shown t=22-28s")]
-    public string guidancePhaseC1 = "1   SCAN  —  hold to suppress movement";
-    [Tooltip("Phase C2 — PULSE tool hint, shown t=29-35s")]
-    public string guidancePhaseC2 = "2   PULSE  —  instant burst, 8s cooldown";
-    [Tooltip("Phase C3 — LOCK tool hint, shown t=36-42s")]
-    public string guidancePhaseC3 = "3   LOCK  —  pin a cluster, 14s cooldown";
+    [Tooltip("Phase A message, shown t=3-8s — before first event")]
+    public string guidancePhaseA  = "colored disruptions will appear  ·  move your cursor over them";
+    [Tooltip("Phase B message, shown t=8-18s — as first event starts")]
+    public string guidancePhaseB  = "hold LEFT CLICK to suppress  ·  keep the field gray";
+    [Tooltip("Phase C — tool reminder, shown t=55-65s")]
+    public string guidancePhaseC1 = "1 SCAN   2 PULSE   3 LOCK  ·  scroll to resize";
     public int guidanceFontSize = 16;
-    [Range(0f, 1f)] public float guidanceMaxAlpha = 0.28f;
+    [Range(0f, 1f)] public float guidanceMaxAlpha = 0.55f;
 
     [Header("Revelation")]
     [Tooltip("First line shown centered over the ending fade")]
@@ -337,14 +333,12 @@ public class GameStateUI : MonoBehaviour
         string message = null;
         float  alpha   = 0f;
 
-        // A: t=3–10s  (fade-in 3–5s, hold 5–8s, fade-out 8–10s)
-        if      (t >= 3f  && t < 10f) { message = guidancePhaseA;  alpha = GuidanceAlpha(t,  3f,  5f,  8f, 10f); }
-        // B: t=11–20s (fade-in 11–13s, hold 13–18s, fade-out 18–20s)
-        else if (t >= 11f && t < 20f) { message = guidancePhaseB;  alpha = GuidanceAlpha(t, 11f, 13f, 18f, 20f); }
-        // C1–C3: each tool gets ~6s with a 1s gap, running t=22–42s
-        else if (t >= 22f && t < 28f) { message = guidancePhaseC1; alpha = GuidanceAlpha(t, 22f, 23f, 27f, 28f); }
-        else if (t >= 29f && t < 35f) { message = guidancePhaseC2; alpha = GuidanceAlpha(t, 29f, 30f, 34f, 35f); }
-        else if (t >= 36f && t < 42f) { message = guidancePhaseC3; alpha = GuidanceAlpha(t, 36f, 37f, 41f, 42f); }
+        // A: t=3–8s  — before first event (t=10s), tell them what to look for
+        if      (t >= 3f  && t < 8f)  { message = guidancePhaseA;  alpha = GuidanceAlpha(t,  3f,  4f,  7f,  8f); }
+        // B: t=8–18s — first event is live at t=10s, tell them how to act
+        else if (t >= 8f  && t < 18f) { message = guidancePhaseB;  alpha = GuidanceAlpha(t,  8f,  9f, 16f, 18f); }
+        // C: t=55–65s — light tool reminder after the escalation begins
+        else if (t >= 55f && t < 65f) { message = guidancePhaseC1; alpha = GuidanceAlpha(t, 55f, 57f, 63f, 65f); }
 
         if (message == null || alpha <= 0.005f) return;
 

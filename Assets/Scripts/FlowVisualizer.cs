@@ -53,6 +53,7 @@ public class FlowVisualizer : MonoBehaviour
     private Color[] velocityPixels;
     private Vector2[] velocityAccumulator;
     private float[] weightAccumulator;
+    private float[] turbulenceAccumulator;
     
     // Cached values
     private Vector2 worldSize;
@@ -128,11 +129,12 @@ public class FlowVisualizer : MonoBehaviour
         velocityPixels = new Color[gridResolution * gridResolution];
         velocityAccumulator = new Vector2[gridResolution * gridResolution];
         weightAccumulator = new float[gridResolution * gridResolution];
+        turbulenceAccumulator = new float[gridResolution * gridResolution];
         
-        // Initialize to neutral (0.5, 0.5 = zero velocity)
+        // Initialize to neutral (0.5, 0.5 = zero velocity, alpha=0 = no turbulence)
         for (int i = 0; i < velocityPixels.Length; i++)
         {
-            velocityPixels[i] = new Color(0.5f, 0.5f, 0f, 1f);
+            velocityPixels[i] = new Color(0.5f, 0.5f, 0f, 0f);
         }
         velocityTexture.SetPixels(velocityPixels);
         velocityTexture.Apply();
@@ -217,9 +219,11 @@ public class FlowVisualizer : MonoBehaviour
         // Clear accumulators
         System.Array.Clear(velocityAccumulator, 0, velocityAccumulator.Length);
         System.Array.Clear(weightAccumulator, 0, weightAccumulator.Length);
+        System.Array.Clear(turbulenceAccumulator, 0, turbulenceAccumulator.Length);
 
         Vector2[] positions = flowSimulation.Positions;
         Vector2[] velocities = flowSimulation.Velocities;
+        float[] turbulenceInfluence = flowSimulation.TurbulenceInfluence;
         int agentCount = flowSimulation.AgentCount;
 
         // Accumulate velocities into grid cells with bilinear splatting
@@ -273,6 +277,13 @@ public class FlowVisualizer : MonoBehaviour
             weightAccumulator[idx10] += w10;
             weightAccumulator[idx01] += w01;
             weightAccumulator[idx11] += w11;
+
+            // Splat turbulence influence into alpha accumulator
+            float turb = turbulenceInfluence[i];
+            turbulenceAccumulator[idx00] += turb * w00;
+            turbulenceAccumulator[idx10] += turb * w10;
+            turbulenceAccumulator[idx01] += turb * w01;
+            turbulenceAccumulator[idx11] += turb * w11;
         }
     }
     
@@ -300,12 +311,19 @@ public class FlowVisualizer : MonoBehaviour
             Vector2 blended = Vector2.Lerp(current, target, smoothFactor);
             float mag = blended.magnitude;
 
+            // Turbulence alpha: average from accumulator, smoothed
+            float targetTurb = weightAccumulator[i] > 0.001f
+                ? turbulenceAccumulator[i] / weightAccumulator[i]
+                : 0f;
+            float prevTurb = velocityPixels[i].a;
+            float blendedTurb = Mathf.Lerp(prevTurb, targetTurb, smoothFactor);
+
             // Encode (0-1 range)
             velocityPixels[i] = new Color(
                 Mathf.Clamp01((blended.x / baseSpeed) * 0.5f + 0.5f),
                 Mathf.Clamp01((blended.y / baseSpeed) * 0.5f + 0.5f),
-                mag / baseSpeed, // Store raw magnitude ratio in Blue
-                1f               // Alpha unused
+                mag / baseSpeed,      // Store raw magnitude ratio in Blue
+                Mathf.Clamp01(blendedTurb) // Turbulence influence in Alpha
             );
         }
         

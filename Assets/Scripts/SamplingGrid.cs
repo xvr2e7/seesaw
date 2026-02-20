@@ -77,10 +77,10 @@ public class SamplingGrid : MonoBehaviour
     public Font customFont;
 
     [Tooltip("Font size for event name")]
-    public int eventNameFontSize = 14;
+    public int eventNameFontSize = 22;
 
     [Tooltip("Distance above grid center for event label")]
-    public float eventNameOffset = 1.5f;
+    public float eventNameOffset = 0.3f;
 
     [Tooltip("Event name color")]
     public Color eventNameColor = new Color(0.52f, 0.54f, 0.58f, 0.80f);
@@ -113,6 +113,23 @@ public class SamplingGrid : MonoBehaviour
     private Vector2[] samplePositions;
     public Vector2[] SamplePositions => samplePositions;
 
+    // ── Sample dot visuals ────────────────────────────────────────────────────
+    [Header("Sample Dot Visuals")]
+    [Tooltip("Size of each sample point dot")]
+    [Range(0.05f, 0.4f)]
+    public float sampleDotSize = 0.12f;
+
+    [Tooltip("Opacity of sample dots (dim — they're scan points, not decorations)")]
+    [Range(0f, 1f)]
+    public float sampleDotAlpha = 0.35f;
+
+    [Tooltip("Fixed world-unit gap between adjacent sample dots. Keep small so the cluster never exceeds the viewport.")]
+    [Range(0.3f, 3f)]
+    public float dotSpacing = 0.8f;
+
+    private const int MAX_SAMPLE_DOTS = 49; // 7×7
+    private GameObject[] _sampleDots;
+
     // ──────────────────────────────────────────────────────────────────────────
 
     void Start()
@@ -120,6 +137,7 @@ public class SamplingGrid : MonoBehaviour
         ValidateReferences();
         CreateBoundingBox();
         CreateSubBoxPool();
+        CreateSampleDotPool();
         SetupGUIStyle();
         UpdateSamplePositions();
     }
@@ -158,10 +176,11 @@ public class SamplingGrid : MonoBehaviour
             line.useWorldSpace   = true;
             line.sortingOrder    = 100;
 
-            boxLines[i] = line;
+                boxLines[i] = line;
+            line.enabled = false;   // box hidden — dots are the cursor
         }
 
-        // 4 corner square markers
+        // 4 corner square markers (kept for mesh/material reuse; hidden)
         cornerMesh    = CreateSquareMesh();
         cornerMarkers = new GameObject[CORNERS_PER_BOX];
 
@@ -177,6 +196,7 @@ public class SamplingGrid : MonoBehaviour
             filter.mesh       = cornerMesh;
 
             cornerMarkers[i] = corner;
+            corner.SetActive(false);   // hidden
         }
     }
 
@@ -202,6 +222,24 @@ public class SamplingGrid : MonoBehaviour
         }
     }
 
+    void CreateSampleDotPool()
+    {
+        _sampleDots = new GameObject[MAX_SAMPLE_DOTS];
+        for (int i = 0; i < MAX_SAMPLE_DOTS; i++)
+        {
+            GameObject dot = new GameObject($"SampleDot_{i}");
+            dot.transform.SetParent(transform);
+
+            MeshRenderer rend = dot.AddComponent<MeshRenderer>();
+            MeshFilter   filt = dot.AddComponent<MeshFilter>();
+            rend.material = lineMaterial;
+            filt.mesh     = cornerMesh;
+
+            dot.SetActive(false);
+            _sampleDots[i] = dot;
+        }
+    }
+
     void SetupGUIStyle()
     {
         eventNameStyle           = new GUIStyle();
@@ -212,7 +250,12 @@ public class SamplingGrid : MonoBehaviour
         if (customFont != null)
             eventNameStyle.font = customFont;
         else
-            eventNameStyle.font = Font.CreateDynamicFontFromOSFont("Consolas", eventNameFontSize);
+        {
+            Font spaceMonoFont = Font.CreateDynamicFontFromOSFont("Space Mono", eventNameFontSize);
+            eventNameStyle.font = spaceMonoFont != null
+                ? spaceMonoFont
+                : Font.CreateDynamicFontFromOSFont("Consolas", eventNameFontSize);
+        }
     }
 
     Mesh CreateSquareMesh()
@@ -258,73 +301,8 @@ public class SamplingGrid : MonoBehaviour
 
     void UpdateBoundingBoxVisuals()
     {
-        if (boxLines == null || boxLines.Length == 0) return;
-
-        float time       = Time.time;
-        float pulseSpeed = isActive ? activePulseSpeed : idlePulseSpeed;
-        float pulse      = 1f + Mathf.Sin(time * pulseSpeed) * pulseIntensity;
-
-        // Choose base color by active tool; low-energy warning only applies to SCAN
-        Color toolColor = _activeToolIndex switch
-        {
-            1 => pulseColor,
-            2 => lockColor,
-            _ => scanColor
-        };
-
-        Color baseColor;
-        if (_activeToolIndex == 0 && energyRatio < 0.3f)
-            baseColor = lowEnergyColor;
-        else if (isActive)
-            baseColor = toolColor * 1.35f;
-        else
-            baseColor = toolColor;
-
-        Color finalColor = baseColor * energyRatio;
-        finalColor.a     = baseColor.a * pulse;
-
-        float    halfSize    = baseRadius;
-        Vector2  topLeft     = currentWorldPos + new Vector2(-halfSize,  halfSize);
-        Vector2  topRight    = currentWorldPos + new Vector2( halfSize,  halfSize);
-        Vector2  bottomLeft  = currentWorldPos + new Vector2(-halfSize, -halfSize);
-        Vector2  bottomRight = currentWorldPos + new Vector2( halfSize, -halfSize);
-
-        // Top
-        boxLines[0].SetPosition(0, new Vector3(topLeft.x,     topLeft.y,     -1f));
-        boxLines[0].SetPosition(1, new Vector3(topRight.x,    topRight.y,    -1f));
-        boxLines[0].startColor = finalColor; boxLines[0].endColor = finalColor;
-
-        // Bottom
-        boxLines[1].SetPosition(0, new Vector3(bottomLeft.x,  bottomLeft.y,  -1f));
-        boxLines[1].SetPosition(1, new Vector3(bottomRight.x, bottomRight.y, -1f));
-        boxLines[1].startColor = finalColor; boxLines[1].endColor = finalColor;
-
-        // Left
-        boxLines[2].SetPosition(0, new Vector3(topLeft.x,     topLeft.y,     -1f));
-        boxLines[2].SetPosition(1, new Vector3(bottomLeft.x,  bottomLeft.y,  -1f));
-        boxLines[2].startColor = finalColor; boxLines[2].endColor = finalColor;
-
-        // Right
-        boxLines[3].SetPosition(0, new Vector3(topRight.x,    topRight.y,    -1f));
-        boxLines[3].SetPosition(1, new Vector3(bottomRight.x, bottomRight.y, -1f));
-        boxLines[3].startColor = finalColor; boxLines[3].endColor = finalColor;
-
-        // Corner markers
-        Vector2[] corners = { topLeft, topRight, bottomRight, bottomLeft };
-        for (int i = 0; i < cornerMarkers.Length; i++)
-        {
-            Vector3 pos = new Vector3(corners[i].x, corners[i].y, -1.5f);
-            cornerMarkers[i].transform.position   = pos;
-            cornerMarkers[i].transform.localScale = Vector3.one * cornerSize * pulse;
-
-            var rend = cornerMarkers[i].GetComponent<MeshRenderer>();
-            if (rend != null)
-            {
-                Color cc = finalColor;
-                cc.a *= 1.5f;
-                rend.material.color = cc;
-            }
-        }
+        // Box and corners are hidden; this pass only keeps energyRatio/toolIndex
+        // state current so UpdateSampleDots can read the right color.
     }
 
     void UpdateSamplePositions()
@@ -335,7 +313,7 @@ public class SamplingGrid : MonoBehaviour
         if (samplePositions == null || samplePositions.Length != pointCount)
             samplePositions = new Vector2[pointCount];
 
-        float spacing = (baseRadius * 2f) / (gridSize + 1);
+        float spacing = dotSpacing;
 
         for (int y = 0; y < gridSize; y++)
         {
@@ -344,6 +322,38 @@ public class SamplingGrid : MonoBehaviour
                 float localX = (x - (gridSize - 1) * 0.5f) * spacing;
                 float localY = (y - (gridSize - 1) * 0.5f) * spacing;
                 samplePositions[y * gridSize + x] = currentWorldPos + new Vector2(localX, localY);
+            }
+        }
+
+        UpdateSampleDots(pointCount);
+    }
+
+    void UpdateSampleDots(int activeCount)
+    {
+        if (_sampleDots == null) return;
+
+        // Derive dot color from current box color (same tint, fixed dim alpha)
+        Color toolColor = _activeToolIndex switch
+        {
+            1 => pulseColor,
+            2 => lockColor,
+            _ => (_activeToolIndex == 0 && energyRatio < 0.3f) ? lowEnergyColor : scanColor
+        };
+        Color dotColor  = toolColor;
+        dotColor.a      = sampleDotAlpha;
+
+        for (int i = 0; i < MAX_SAMPLE_DOTS; i++)
+        {
+            if (i < activeCount)
+            {
+                _sampleDots[i].SetActive(true);
+                _sampleDots[i].transform.position   = new Vector3(samplePositions[i].x, samplePositions[i].y, -1.2f);
+                _sampleDots[i].transform.localScale  = Vector3.one * sampleDotSize;
+                _sampleDots[i].GetComponent<MeshRenderer>().material.color = dotColor;
+            }
+            else
+            {
+                _sampleDots[i].SetActive(false);
             }
         }
     }
@@ -468,7 +478,7 @@ public class SamplingGrid : MonoBehaviour
             Vector3 screenPos  = mainCamera.WorldToScreenPoint(worldPos);
             screenPos.y        = Screen.height - screenPos.y;
 
-            Rect rect = new Rect(screenPos.x - 100, screenPos.y - eventNameFontSize / 2, 200, eventNameFontSize + 10);
+            Rect rect = new Rect(screenPos.x - 160, screenPos.y - eventNameFontSize / 2, 320, eventNameFontSize + 10);
 
             Color nameColor = eventNameColor;
             if (isActive) nameColor.a *= 0.9f + Mathf.Sin(Time.time * 8f) * 0.1f;
@@ -499,17 +509,17 @@ public class SamplingGrid : MonoBehaviour
     string ExtractPatternKeyword(string eventName)
     {
         if (eventName.Contains("Circular") || eventName.Contains("Assembly") || eventName.Contains("Gather"))
-            return "CIRCULAR";
+            return "ASSEMBLY";
         if (eventName.Contains("Scatter") || eventName.Contains("Panic"))
-            return "SCATTER";
+            return "DISPERSAL";
         if (eventName.Contains("Vortex") || eventName.Contains("Spiral"))
-            return "VORTEX";
+            return "SPIRAL FORMATION";
         if (eventName.Contains("Wave") || eventName.Contains("March"))
-            return "WAVE";
+            return "MARCH";
         if (eventName.Contains("Oscillation"))
-            return "OSCILLATION";
+            return "DISTURBANCE";
         if (eventName.Contains("Cluster") || eventName.Contains("Blockade") || eventName.Contains("Aftermath"))
-            return "CLUSTER";
+            return "BLOCKADE";
 
         int underscoreIndex = eventName.IndexOf('_');
         if (underscoreIndex > 0)
@@ -586,6 +596,12 @@ public class SamplingGrid : MonoBehaviour
         {
             foreach (var lr in _subBoxLines)
                 if (lr != null) Destroy(lr.gameObject);
+        }
+
+        if (_sampleDots != null)
+        {
+            foreach (var dot in _sampleDots)
+                if (dot != null) Destroy(dot);
         }
 
         if (cornerMesh   != null) Destroy(cornerMesh);

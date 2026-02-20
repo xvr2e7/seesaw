@@ -1,6 +1,6 @@
 # Laminar Flow: A Documentary of Machine Vision
 
-> Mechanical reference values current as of v1.4.6.
+> Mechanical reference values current as of v1.4.7.
 
 ## Conceptual Overview
 
@@ -29,6 +29,7 @@ Each disruption is color-coded, making the chaos visible and distinct. The syste
 
 Your interface is a **computer vision detection system**. When you move your cursor, a bounding box appears—a rectangular outline with corner markers, exactly like object recognition algorithms draw on security footage or autonomous vehicle feeds. The box is always visible, not just when a tool is active.
 
+
 ```
 ┌─────────────────┐
 │                 │
@@ -55,25 +56,28 @@ Inside the main box, a spatial bucketing pass renders small **cluster sub-boxes*
 
 ### Grid Density (Perception Quality)
 
-The system's perception quality changes based on your performance (coherence):
+The system begins with a small, sparse detection grid — 9 sample points in a tight area. As you suppress turbulence, the grid visibly grows: wider reach, then denser sampling, then wider again. But active turbulence erodes your progress. Fall behind and the grid shrinks back.
 
-- **3×3 sampling grid**: Struggling—the system can barely see
-- **5×5 sampling grid**: Baseline—normal perception
-- **7×7 sampling grid**: Enhanced—high-resolution detection
+Six stages, driven by a tug-of-war between your suppression and the turbulence you're ignoring:
 
-When coherence stays above **0.75 for 4 consecutive seconds**, the grid upgrades one step. When coherence stays below **0.35 for 4 seconds**, it downgrades. High turbulence pressure (above 0.7) accelerates the downgrade timer. Grid density interpolates smoothly at 1.5× per second rather than stepping instantly.
+| Stage | Grid | Reach | Direction |
+|-------|------|-------|-----------|
+| 0 | 3×3 | small | start |
+| 1 | 3×3 | medium | suppression gaining |
+| 2 | 5×5 | medium | holding ground |
+| 3 | 5×5 | large | controlling the field |
+| 4 | 7×7 | larger | near-full suppression |
+| 5 | 7×7 | maximum | mastery |
 
-*You don't choose this. The algorithm adjusts based on how well you maintain order.*
+Every active turbulence event continuously drains your accumulated suppression score. Suppress faster than the field generates disorder and you grow. Lose ground — let events run, spread, compound — and the grid contracts. You can slide all the way back to 3×3.
 
-Better performance → denser grid → more effective detection → easier to maintain order.
-Poor performance → degraded grid → weaker detection → harder to recover.
-The machine rewards competence, punishes failure.
+*You don't choose this. The balance chooses for you.*
 
 ---
 
 ## The Three Tools
 
-Press **1**, **2**, or **3** to switch between tools. All tools are aimed with the mouse cursor and fired with **left click**. The **scroll wheel** resizes the active radius (2–25 units, except LOCK which is capped at 4 regardless). The bounding box color reflects the active tool: cool blue-gray for SCAN, warm amber for PULSE, muted red-orange for LOCK.
+Press **1**, **2**, or **3** to switch between tools. All tools are aimed with the mouse cursor and fired with **left click**. The tool color reflects the active tool: cool blue-gray for SCAN, warm amber for PULSE, muted red-orange for LOCK. Tool reach grows automatically as you suppress turbulence — it cannot be manually adjusted.
 
 ### SCAN (key 1) — The Workhorse
 
@@ -295,11 +299,11 @@ Random events also spawn on top of the scripted sequence — every 6–15 second
 **Moment 3: Energy Depletion**
 *The box shifts amber. The SCAN cuts off. Helpless. Turbulence spreads while you wait.*
 
-**Moment 4: Grid Degradation**
-*The lines thin. The box feels fragile. The system can barely see. You're losing.*
+**Moment 4: Grid Contraction**
+*The dots pull inward. Fewer of them. The field is winning. You're falling behind.*
 
-**Moment 5: Grid Enhancement**
-*The box sharpens. Lines thicken. Perception is crisp. The system trusts you. Power.*
+**Moment 5: Grid Expansion**
+*More dots appear. They spread. The system is reaching further. You're holding.*
 
 **Moment 6: Triage**
 *Three turbulences at once. You can't fix them all. Choose. Prioritize. Let one go.*
@@ -351,7 +355,6 @@ The game never tells you this explicitly. But the visual language suggests it. A
 - **Mouse movement**: Position detection grid
 - **Left click / hold**: Fire active tool
 - **1 / 2 / 3**: Switch between SCAN, PULSE, LOCK
-- **Mouse wheel**: Adjust detection area size (2–25 units; LOCK capped at 4)
 
 ---
 

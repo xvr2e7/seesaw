@@ -54,6 +54,9 @@ public class FlowSimulation : MonoBehaviour
     // Score Tracking
     private float _frameTurbulence = 0f;
     private float _frameDampening = 0f;
+
+    // Growth tracking — separate accumulator consumed by PerformanceTracker
+    private float _pendingDampeningForGrowth = 0f;
     
     // Public Accessors
     public Vector2[] Positions => positions;
@@ -289,6 +292,18 @@ public class FlowSimulation : MonoBehaviour
     public void ReportDampening(float strength)
     {
         _frameDampening += strength;
+        _pendingDampeningForGrowth += strength;
+    }
+
+    /// <summary>
+    /// Returns accumulated dampening since last call and resets the counter.
+    /// Used by PerformanceTracker to grow the grid without touching score accounting.
+    /// </summary>
+    public float ConsumeReportedDampening()
+    {
+        float v = _pendingDampeningForGrowth;
+        _pendingDampeningForGrowth = 0f;
+        return v;
     }
     
     void OnDrawGizmos()
@@ -351,9 +366,14 @@ public class FlowSimulation : MonoBehaviour
                 
                 // Add to persistent dampening factor
                 dampeningFactors[i] = Mathf.Min(dampeningFactors[i] + dampening * falloff * 0.1f, 1f);
-                
+
                 // Also apply immediate velocity cut
                 velocities[i] *= (1f - dampening * falloff * 0.2f);
+
+                // Accelerate turbulence influence decay while SCAN is active
+                turbulenceInfluence[i] = Mathf.Max(0f,
+                    turbulenceInfluence[i] - dampening * falloff * 4f * Time.deltaTime);
+                if (turbulenceInfluence[i] <= 0f) turbulencePattern[i] = 0;
             }
         }
     }

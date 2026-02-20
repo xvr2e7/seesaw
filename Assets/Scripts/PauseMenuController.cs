@@ -495,50 +495,35 @@ public class PauseMenuController : MonoBehaviour
         lineRect.anchoredPosition = Vector2.zero;
         lineRect.sizeDelta        = new Vector2(0f, 1f);
 
-        // Title
-        var titleGO  = new GameObject("Title");
-        titleGO.transform.SetParent(go.transform, false);
-        var titleTMP = titleGO.AddComponent<TextMeshProUGUI>();
-        titleTMP.text             = "CONTROLS";
-        titleTMP.font             = resolvedFont;
-        titleTMP.fontSize         = 14f;
-        titleTMP.color            = new Color(0.5f, 0.52f, 0.55f, 1f);
-        titleTMP.characterSpacing = 4f;
-        titleTMP.alignment        = TextAlignmentOptions.Center;
-        titleTMP.raycastTarget    = false;
-        var titleRect = titleGO.GetComponent<RectTransform>();
-        titleRect.anchorMin        = new Vector2(0.5f, 0.5f);
-        titleRect.anchorMax        = new Vector2(0.5f, 0.5f);
-        titleRect.pivot            = new Vector2(0.5f, 0.5f);
-        titleRect.anchoredPosition = new Vector2(0f, 120f);
-        titleRect.sizeDelta        = new Vector2(400f, 30f);
-
-        // Body
+        // Body — anchored to top, left-aligned
         const string controlsText =
-            "MOUSE         aim the convergence field\n" +
+            "Colored disruptions appear in the flow. Your job is to suppress them before they spread.\n\n" +
+            "Move your cursor over a disruption. Hold LEFT CLICK to dampen it.\n" +
+            "Watch the agents return to gray. That is the goal.\n\n" +
+            "MOUSE         aim the detection field\n" +
             "LEFT CLICK    activate selected tool\n" +
-            "SCROLL        adjust field radius\n" +
-            "ESC           pause\n\n" +
-            "1  SCAN        hold to dampen turbulence\n" +
-            "2  PULSE       instant burst — 8s cooldown\n" +
-            "3  LOCK        freeze agents — 14s cooldown";
+            "SCROLL        resize detection area\n\n" +
+            "1  SCAN        hold to suppress  \u00b7  limited energy, recharges\n" +
+            "2  PULSE       instant burst     \u00b7  8s cooldown, no energy cost\n" +
+            "3  LOCK        freeze a cluster  \u00b7  14s cooldown, small radius\n\n" +
+            "The divergence bar (top-left) measures disorder. Keep it low.";
 
         var bodyGO  = new GameObject("Body");
         bodyGO.transform.SetParent(go.transform, false);
         var bodyTMP = bodyGO.AddComponent<TextMeshProUGUI>();
         bodyTMP.text          = controlsText;
         bodyTMP.font          = resolvedFont;
-        bodyTMP.fontSize      = 15f;
+        bodyTMP.fontSize      = 16f;
         bodyTMP.color         = new Color(0.55f, 0.57f, 0.6f, 1f);
         bodyTMP.alignment     = TextAlignmentOptions.Left;
-        bodyTMP.lineSpacing   = 10f;
+        bodyTMP.lineSpacing   = 8f;
         bodyTMP.raycastTarget = false;
         var bodyRect = bodyGO.GetComponent<RectTransform>();
-        bodyRect.anchorMin        = new Vector2(0.5f, 0.5f);
-        bodyRect.anchorMax        = new Vector2(0.5f, 0.5f);
-        bodyRect.pivot            = new Vector2(0.5f, 0.5f);
-        bodyRect.anchoredPosition = new Vector2(0f, -20f);
-        bodyRect.sizeDelta        = new Vector2(500f, 260f);
+        bodyRect.anchorMin        = new Vector2(0.5f, 1f);
+        bodyRect.anchorMax        = new Vector2(0.5f, 1f);
+        bodyRect.pivot            = new Vector2(0.5f, 1f);
+        bodyRect.anchoredPosition = new Vector2(0f, -100f);
+        bodyRect.sizeDelta        = new Vector2(700f, 520f);
 
         return go;
     }

@@ -84,6 +84,10 @@ public class GameManager : MonoBehaviour
     private const string PREF_DIV_SAMPLES   = "SavedDivergenceSamples";
     private const string PREF_PEAK_DIV      = "SavedPeakDivergence";
     private const string PREF_LAST_SAMPLE   = "SavedLastSampleTime";
+    private const string PREF_BEST_SCORE    = "BestConvergenceScore";
+
+    public static float GetBestScore() => PlayerPrefs.GetFloat("BestConvergenceScore", -1f);
+    public static bool  HasBestScore()  => PlayerPrefs.HasKey("BestConvergenceScore");
     
     // Public accessors
     public GameState CurrentState => currentState;
@@ -351,6 +355,14 @@ public class GameManager : MonoBehaviour
         finalScore = Mathf.Pow(finalScore, 0.8f);
         
         OnScoreCalculated?.Invoke(finalScore);
+
+        // Persist best score across sessions
+        float prev = PlayerPrefs.GetFloat(PREF_BEST_SCORE, -1f);
+        if (finalScore > prev)
+        {
+            PlayerPrefs.SetFloat(PREF_BEST_SCORE, finalScore);
+            PlayerPrefs.Save();
+        }
     }
     
     void UpdateEnding()

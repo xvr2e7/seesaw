@@ -19,7 +19,7 @@ public class DocumentaryController : MonoBehaviour
     public Camera mainCamera;
     
     [Header("Video")]
-    public string videoFileName = "documentary.mp4";
+    public string videoFileName = "laminar_demo.mp4";
 
     [Tooltip("Volume of the documentary video (0-1)")]
     [Range(0f, 1f)]
@@ -55,7 +55,7 @@ public class DocumentaryController : MonoBehaviour
     [Header("Debug")]
     public bool showDebugInfo = false;
     public KeyCode skipKey = KeyCode.F12;
-    public KeyCode returnKey = KeyCode.Escape;
+    public KeyCode returnKey = KeyCode.F12;
     
     // UI
     private Canvas canvas;
@@ -81,6 +81,11 @@ public class DocumentaryController : MonoBehaviour
     private float startTime;
     private float replayDuration;
     private bool isReturningToConsole = false;
+
+    // Video-only mode: skip gameplay replay, show only the documentary video fullscreen
+    private static bool _videoOnlyMode = false;
+    public  static void SetVideoOnlyMode() => _videoOnlyMode = true;
+    private bool isVideoOnly = false; // instance flag set in Start
     
     void Start()
     {
@@ -89,17 +94,28 @@ public class DocumentaryController : MonoBehaviour
         CreateVideoPlayer();
         CreateReplayCamera();
         CreateCursor();
-        
+
         // Hide until needed
         canvas.gameObject.SetActive(false);
-        
+
+        // Video-only mode: triggered from console WATCH button — skip gameplay, play video only
+        if (_videoOnlyMode)
+        {
+            _videoOnlyMode = false;
+            isVideoOnly = true;
+            DisableGameplaySystems();
+            leftPanel.gameObject.SetActive(false); // hide replay panel
+            StartDocumentary();
+            return;
+        }
+
         // Subscribe to game end
         if (gameManager != null)
         {
             gameManager.OnStateChanged += OnGameStateChanged;
         }
     }
-    
+
     void OnDestroy()
     {
         if (gameManager != null)
@@ -254,9 +270,9 @@ public class DocumentaryController : MonoBehaviour
     public void StartDocumentary()
     {
         if (isActive) return;
-        
+
         Debug.Log("[Documentary] Starting documentary phase");
-        
+
         if (inputRecorder != null && inputRecorder.RecordedFrames.Count > 0)
         {
             replayDuration = inputRecorder.GetRecordingDuration();
@@ -265,11 +281,11 @@ public class DocumentaryController : MonoBehaviour
         {
             replayDuration = 60f;
         }
-        
+
         videoEnded = false;
         StartCoroutine(TransitionIn());
     }
-    
+
     IEnumerator TransitionIn()
     {
         canvas.gameObject.SetActive(true);
@@ -414,36 +430,58 @@ public class DocumentaryController : MonoBehaviour
     {
         float sw = Screen.width;
         float sh = Screen.height;
-        
-        float availableWidth = sw - (spacing * 3f);
-        float availableHeight = sh - (spacing * 2f);
-        
-        float panelWidth = availableWidth / 2f;
-        float panelHeight = panelWidth / panelAspectRatio;
-        
-        if (panelHeight > availableHeight)
+
+        if (isVideoOnly)
         {
-            panelHeight = availableHeight;
-            panelWidth = panelHeight * panelAspectRatio;
+            // Full-screen video, letterboxed to preserve aspect ratio
+            float availableHeight = sh - (spacing * 2f);
+            float panelWidth  = availableHeight * panelAspectRatio;
+            if (panelWidth > sw - spacing * 2f)
+            {
+                panelWidth  = sw - spacing * 2f;
+                availableHeight = panelWidth / panelAspectRatio;
+            }
+            float startX = (sw - panelWidth)  / 2f;
+            float startY = (sh - availableHeight) / 2f;
+
+            RectTransform rightRect = rightPanel.GetComponent<RectTransform>();
+            rightRect.anchorMin        = Vector2.zero;
+            rightRect.anchorMax        = Vector2.zero;
+            rightRect.pivot            = Vector2.zero;
+            rightRect.anchoredPosition = new Vector2(startX, startY);
+            rightRect.sizeDelta        = new Vector2(panelWidth, availableHeight);
+            return;
         }
-        
-        float totalWidth = (panelWidth * 2f) + spacing;
-        float startX = (sw - totalWidth) / 2f;
-        float startY = (sh - panelHeight) / 2f;
-        
+
+        float availableWidth = sw - (spacing * 3f);
+        float availableHeightSplit = sh - (spacing * 2f);
+
+        float panelWidthSplit = availableWidth / 2f;
+        float panelHeight = panelWidthSplit / panelAspectRatio;
+
+        if (panelHeight > availableHeightSplit)
+        {
+            panelHeight     = availableHeightSplit;
+            panelWidthSplit = panelHeight * panelAspectRatio;
+        }
+
+        float totalWidth = (panelWidthSplit * 2f) + spacing;
+        float startXSplit = (sw - totalWidth) / 2f;
+        float startYSplit = (sh - panelHeight) / 2f;
+
         RectTransform leftRect = leftPanel.GetComponent<RectTransform>();
         leftRect.anchorMin = Vector2.zero;
         leftRect.anchorMax = Vector2.zero;
         leftRect.pivot = Vector2.zero;
-        leftRect.anchoredPosition = new Vector2(startX, startY);
-        leftRect.sizeDelta = new Vector2(panelWidth, panelHeight);
-        
-        RectTransform rightRect = rightPanel.GetComponent<RectTransform>();
-        rightRect.anchorMin = Vector2.zero;
-        rightRect.anchorMax = Vector2.zero;
-        rightRect.pivot = Vector2.zero;
-        rightRect.anchoredPosition = new Vector2(startX + panelWidth + spacing, startY);
-        rightRect.sizeDelta = new Vector2(panelWidth, panelHeight);
+        leftRect.anchoredPosition = new Vector2(startXSplit, startYSplit);
+        leftRect.sizeDelta = new Vector2(panelWidthSplit, panelHeight);
+
+        RectTransform rightRect2 = rightPanel.GetComponent<RectTransform>();
+        rightRect2.anchorMin        = Vector2.zero;
+        rightRect2.anchorMax        = Vector2.zero;
+        rightRect2.pivot            = Vector2.zero;
+        rightRect2.anchoredPosition = new Vector2(startXSplit + panelWidthSplit + spacing, startYSplit);
+        rightRect2.sizeDelta        = new Vector2(panelWidthSplit, panelHeight);
     }
     
     void UpdateReplay()

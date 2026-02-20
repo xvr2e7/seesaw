@@ -170,6 +170,7 @@ Shader "LaminarFlow/OpticalFlowHSV"
                 // Decode velocity from texture (stored as 0-1, convert back to -1 to 1)
                 float2 velocity = (velData.rg - 0.5) * 2.0;
                 float magnitude = velData.b;
+                float turbulence = velData.a;  // turbulence influence from alpha channel
 
                 // Add organic noise
                 float2 noiseUV = input.uv * 30.0 + _Time.y * 0.05;
@@ -180,18 +181,28 @@ Shader "LaminarFlow/OpticalFlowHSV"
                 // _BlendSoftness doubles as the normalized baseline threshold (0.15 ≈ moveSpeed/maxSpeed).
                 float excessMag = saturate((magnitude - _BlendSoftness) / (1.0 - _BlendSoftness));
 
+                // Turbulence boosts saturation and value beyond what velocity alone provides
+                float effectiveSat = lerp(
+                    lerp(_SaturationRange.x, _SaturationRange.y, saturate(excessMag * _VelocityScale * _FlowIntensity)),
+                    _SaturationRange.y * 2.5,
+                    turbulence);
+                float effectiveVal = lerp(
+                    _ValueRange.x,
+                    _ValueRange.y * 1.8,
+                    saturate(excessMag * _VelocityScale * _FlowIntensity + turbulence));
+
                 float3 noisyHSV = float3(
                     frac(atan2(velocity.y, velocity.x) / (2.0 * 3.14159265) + 0.5 + _HueOffset + n * _NoiseAmount),
-                    lerp(_SaturationRange.x, _SaturationRange.y, saturate(excessMag * _VelocityScale * _FlowIntensity)),
-                    lerp(_ValueRange.x, _ValueRange.y, saturate(excessMag * _VelocityScale * _FlowIntensity))
+                    effectiveSat,
+                    effectiveVal
                 );
                 float3 flowColor = HSVtoRGB(noisyHSV);
 
                 // Apply vibrancy
                 flowColor = pow(max(flowColor, 0.001), 1.0 / _ColorVibrancy);
 
-                // Blend factor — only show color where there's excess motion
-                float blendFactor = saturate(excessMag * _FlowIntensity);
+                // Blend factor — show color where there's excess motion OR turbulence
+                float blendFactor = saturate(max(excessMag * _FlowIntensity, turbulence));
 
                 // Blend with background
                 float3 finalColor = lerp(_BackgroundColor.rgb, flowColor, blendFactor);

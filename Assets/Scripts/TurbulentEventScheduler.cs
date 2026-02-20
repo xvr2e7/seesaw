@@ -19,16 +19,16 @@ public class TurbulentEventScheduler : MonoBehaviour
     
     [Header("Random Event Settings")]
     [Tooltip("Minimum time between random events")]
-    public float minEventInterval = 6f;
+    public float minEventInterval = 10f;
     
     [Tooltip("Maximum time between random events")]
     public float maxEventInterval = 15f;
     
-    [Tooltip("Delay before first random event — keep ≥40s so the scripted tutorial event at t=10s has breathing room")]
-    public float initialDelay = 40f;
+    [Tooltip("Delay before first random event — keep ≥70s so the full scripted tutorial (t=10–65s) completes before random events start")]
+    public float initialDelay = 70f;
     
     [Tooltip("Maximum simultaneous random events")]
-    public int maxSimultaneousEvents = 3;
+    public int maxSimultaneousEvents = 2;
     
     [Tooltip("Stop spawning random events after this time")]
     public float randomEventCutoff = 240f; // 4 minutes
@@ -394,14 +394,14 @@ public class TurbulentEventScheduler : MonoBehaviour
             frequency = 1.2f
         });
 
-        // Event 3: Scatter at 75 seconds (panic event)
+        // Event 3: Scatter at 85 seconds (panic event)
         scriptedEvents.Add(new TurbulenceEvent
         {
             eventName = "Panic_Scatter",
             pattern = TurbulenceEvent.PatternType.Scatter,
             position = new Vector2(halfSize.x * 0.2f, halfSize.y * 0.35f),
             radius = 12f,
-            startTime = 75f,
+            startTime = 85f,
             duration = 10f,
             fadeInTime = 0.5f,
             fadeOutTime = 2.5f,

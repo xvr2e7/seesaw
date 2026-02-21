@@ -135,6 +135,7 @@ public class PauseMenuController : MonoBehaviour
         FindObjectOfType<TurbulenceIndicatorUI>()?.SetPaused(!visible);
         FindObjectOfType<GameStateUI>()?.SetPaused(!visible);
         FindObjectOfType<PlayerToolController>()?.SetPaused(!visible);
+        FindObjectOfType<SamplingGrid>()?.SetPaused(!visible);
     }
 
     // ─── Animations ───────────────────────────────────────────────────────────

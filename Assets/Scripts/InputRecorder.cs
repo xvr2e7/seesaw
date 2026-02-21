@@ -1,434 +1,68 @@
-using UnityEngine;
 using System.Collections.Generic;
+using UnityEngine;
 
 /// <summary>
-/// Records all player interactions for documentary replay (Phase 7).
-/// 
-/// Captures:
-/// - Cursor world position
-/// - Camera position and viewport
-/// - Tool state (active, radius, strength)
-/// - Agent positions (for background playback)
-/// - Timestamps synchronized to session time
+/// Records player tool actions at 10 Hz during a gameplay session.
+/// Consumed by DocumentaryController to replay the player's inputs
+/// over the left-panel simulation during the documentary phase.
 /// </summary>
 public class InputRecorder : MonoBehaviour
 {
-    [Header("References")]
-    public GameManager gameManager;
-    public PlayerToolController playerTool;
-    public CameraController cameraController;
-    public FlowSimulation flowSimulation;
-    
-    [Header("Recording Settings")]
-    [Tooltip("Record every N frames (1 = every frame, 2 = every other, etc.)")]
-    [Range(1, 10)]
-    public int recordingInterval = 2;
-    
-    [Tooltip("Also record when tool state changes, regardless of interval")]
-    public bool recordOnToolStateChange = true;
-    
-    [Tooltip("Maximum frames to store (memory limit)")]
-    public int maxFrames = 50000;
-    
-    [Header("Debug")]
-    public bool showDebugInfo = false;
-    
-    // Recording state
-    private bool isRecording = false;
-    private int frameCounter = 0;
-    private InputFrame lastFrame;
-    private bool lastToolActive = false;
-    
-    // Recorded data
-    private List<InputFrame> recordedFrames = new List<InputFrame>();
-    private RecordingMetadata metadata;
-    
-    // Public accessors
-    public bool IsRecording => isRecording;
-    public int FrameCount => recordedFrames.Count;
-    public List<InputFrame> RecordedFrames => recordedFrames;
-    public RecordingMetadata Metadata => metadata;
-    
-    void Start()
-    {
-        FindReferences();
-        SubscribeToEvents();
-    }
-    
-    void FindReferences()
-    {
-        if (gameManager == null)
-            gameManager = FindObjectOfType<GameManager>();
-        
-        if (playerTool == null)
-            playerTool = FindObjectOfType<PlayerToolController>();
-        
-        if (cameraController == null)
-            cameraController = FindObjectOfType<CameraController>();
-        
-        if (flowSimulation == null)
-            flowSimulation = FindObjectOfType<FlowSimulation>();
-    }
-    
-    void SubscribeToEvents()
-    {
-        if (gameManager != null)
-        {
-            gameManager.OnSessionStart += OnSessionStart;
-            gameManager.OnSessionEnd += OnSessionEnd;
-        }
-    }
-    
-    void OnDestroy()
-    {
-        if (gameManager != null)
-        {
-            gameManager.OnSessionStart -= OnSessionStart;
-            gameManager.OnSessionEnd -= OnSessionEnd;
-        }
-    }
-    
-    void OnSessionStart()
-    {
-        StartRecording();
-    }
-    
-    void OnSessionEnd()
-    {
-        StopRecording();
-    }
-    
-    void Update()
-    {
-        if (!isRecording) return;
-        
-        frameCounter++;
-        
-        bool shouldRecord = (frameCounter % recordingInterval == 0);
-        
-        // Also record on tool state changes
-        if (recordOnToolStateChange && playerTool != null)
-        {
-            var toolState = playerTool.GetToolState();
-            if (toolState.isActive != lastToolActive)
-            {
-                shouldRecord = true;
-                lastToolActive = toolState.isActive;
-            }
-        }
-        
-        if (shouldRecord && recordedFrames.Count < maxFrames)
-        {
-            RecordFrame();
-        }
-    }
-    
-    void RecordFrame()
-    {
-        InputFrame frame = new InputFrame();
-        
-        // Timestamp
-        frame.timestamp = gameManager != null ? gameManager.SessionTime : Time.time;
-        frame.frameNumber = frameCounter;
-        
-        // Tool state
-        if (playerTool != null)
-        {
-            var toolState = playerTool.GetToolState();
-            frame.cursorWorldPosition = toolState.worldPosition;
-            frame.toolRadius = toolState.radius;
-            frame.toolStrength = toolState.strength;
-            frame.toolActive = toolState.isActive;
+    [Tooltip("How often to capture a frame (seconds). 0.1 = 10 Hz.")]
+    public float sampleInterval = 0.1f;
 
-            // Get energy from ToolEnergySystem component
-            var energySystem = playerTool.GetComponent<ToolEnergySystem>();
-            frame.toolEnergy = energySystem != null ? energySystem.CurrentEnergy : 0f;
-        }
-        
-        // Camera state
-        if (cameraController != null)
-        {
-            frame.cameraPosition = new Vector2(
-                cameraController.transform.position.x,
-                cameraController.transform.position.y
-            );
-            frame.cameraViewport = cameraController.GetVisibleBounds();
-        }
-        
-        // Flow state (Capture full agent positions for replay)
-        if (flowSimulation != null)
-        {
-            frame.currentDivergence = flowSimulation.CurrentDivergence;
-            frame.meanVelocity = flowSimulation.MeanVelocity;
-            
-            // Clone the array to store a snapshot of positions
-            if (flowSimulation.Positions != null)
-            {
-                frame.agentPositions = (Vector2[])flowSimulation.Positions.Clone();
-            }
-        }
-        
-        recordedFrames.Add(frame);
-        lastFrame = frame;
-    }
-    
+    private readonly List<InputFrame> _frames = new List<InputFrame>(4096);
+    private float _nextSampleTime = 0f;
+    private bool  _recording      = false;
+
+    public IReadOnlyList<InputFrame> Frames      => _frames;
+    public bool                      HasRecording => _frames.Count > 0;
+    public float                     Duration     => _frames.Count > 0 ? _frames[_frames.Count - 1].time : 0f;
+
     public void StartRecording()
     {
-        if (isRecording) return;
-        
-        // Clear previous recording
-        recordedFrames.Clear();
-        frameCounter = 0;
-        lastToolActive = false;
-        
-        // Initialize metadata
-        metadata = new RecordingMetadata
-        {
-            recordingStartTime = Time.time,
-            worldSize = flowSimulation != null ? flowSimulation.WorldSize : Vector2.one * 100f,
-            agentCount = flowSimulation != null ? flowSimulation.AgentCount : 0
-        };
-        
-        isRecording = true;
-        
+        _frames.Clear();
+        _nextSampleTime = 0f;
+        _recording      = true;
         Debug.Log("[InputRecorder] Recording started");
     }
-    
+
     public void StopRecording()
     {
-        if (!isRecording) return;
-        
-        isRecording = false;
-        
-        // Finalize metadata
-        metadata.recordingEndTime = Time.time;
-        metadata.totalFrames = recordedFrames.Count;
-        metadata.sessionDuration = gameManager != null ? gameManager.SessionTime : 0f;
-        
-        // Calculate tool usage statistics
-        float totalToolTime = 0f;
-        int toolActivations = 0;
-        bool wasActive = false;
-        
-        foreach (var frame in recordedFrames)
-        {
-            if (frame.toolActive)
-            {
-                totalToolTime += recordingInterval * Time.fixedDeltaTime;
-                
-                if (!wasActive)
-                {
-                    toolActivations++;
-                }
-            }
-            wasActive = frame.toolActive;
-        }
-        
-        metadata.totalToolActiveTime = totalToolTime;
-        metadata.toolActivationCount = toolActivations;
-        
-        Debug.Log($"[InputRecorder] Recording stopped. Frames: {recordedFrames.Count}, Duration: {metadata.sessionDuration:F1}s");
+        _recording = false;
+        Debug.Log($"[InputRecorder] Recording stopped. Frames: {_frames.Count}, Duration: {Duration:F1}s");
     }
-    
+
     /// <summary>
-    /// Get frame at specific timestamp (for replay)
+    /// Called every frame from PlayerToolController.
+    /// Stores a frame if the sample interval has elapsed.
     /// </summary>
-    public InputFrame GetFrameAtTime(float timestamp)
+    public void TrySample(float sessionTime, Vector2 worldPos, bool held, float radius, float strength, float convergenceScore)
     {
-        if (recordedFrames.Count == 0)
-            return new InputFrame();
-        
-        // Binary search for closest frame
-        int low = 0;
-        int high = recordedFrames.Count - 1;
-        
-        while (low < high)
+        if (!_recording) return;
+        if (sessionTime < _nextSampleTime) return;
+
+        _frames.Add(new InputFrame
         {
-            int mid = (low + high) / 2;
-            
-            if (recordedFrames[mid].timestamp < timestamp)
-            {
-                low = mid + 1;
-            }
-            else
-            {
-                high = mid;
-            }
-        }
-        
-        return recordedFrames[low];
-    }
-    
-    /// <summary>
-    /// Get interpolated frame at specific timestamp
-    /// </summary>
-    public InputFrame GetInterpolatedFrameAtTime(float timestamp)
-    {
-        if (recordedFrames.Count == 0)
-            return new InputFrame();
-        
-        if (recordedFrames.Count == 1)
-            return recordedFrames[0];
-        
-        // Find bracketing frames
-        int low = 0;
-        int high = recordedFrames.Count - 1;
-        
-        while (high - low > 1)
-        {
-            int mid = (low + high) / 2;
-            
-            if (recordedFrames[mid].timestamp < timestamp)
-            {
-                low = mid;
-            }
-            else
-            {
-                high = mid;
-            }
-        }
-        
-        InputFrame a = recordedFrames[low];
-        InputFrame b = recordedFrames[high];
-        
-        float t = (timestamp - a.timestamp) / (b.timestamp - a.timestamp);
-        t = Mathf.Clamp01(t);
-        
-        return InputFrame.Lerp(a, b, t);
-    }
-    
-    /// <summary>
-    /// Clear recorded data
-    /// </summary>
-    public void ClearRecording()
-    {
-        recordedFrames.Clear();
-        frameCounter = 0;
-        isRecording = false;
-    }
-    
-    /// <summary>
-    /// Get recording duration
-    /// </summary>
-    public float GetRecordingDuration()
-    {
-        if (recordedFrames.Count < 2)
-            return 0f;
-        
-        return recordedFrames[recordedFrames.Count - 1].timestamp - recordedFrames[0].timestamp;
-    }
-    
-    void OnGUI()
-    {
-        if (!showDebugInfo) return;
-        
-        GUILayout.BeginArea(new Rect(10, 600, 300, 150));
-        GUILayout.Box("Input Recorder");
-        GUILayout.Label($"Recording: {isRecording}");
-        GUILayout.Label($"Frames: {recordedFrames.Count} / {maxFrames}");
-        GUILayout.Label($"Frame Counter: {frameCounter}");
-        
-        if (recordedFrames.Count > 0)
-        {
-            GUILayout.Label($"Duration: {GetRecordingDuration():F1}s");
-            GUILayout.Label($"Last Tool Active: {lastFrame.toolActive}");
-        }
-        
-        if (metadata != null)
-        {
-            GUILayout.Label($"Tool Activations: {metadata.toolActivationCount}");
-        }
-        GUILayout.EndArea();
+            time             = sessionTime,
+            worldPos         = worldPos,
+            held             = held,
+            radius           = radius,
+            strength         = strength,
+            convergenceScore = convergenceScore
+        });
+
+        _nextSampleTime = sessionTime + sampleInterval;
     }
 }
 
-/// <summary>
-/// Single frame of recorded input
-/// </summary>
 [System.Serializable]
 public struct InputFrame
 {
-    // Timing
-    public float timestamp;
-    public int frameNumber;
-    
-    // Tool state
-    public Vector2 cursorWorldPosition;
-    public float toolRadius;
-    public float toolStrength;
-    public bool toolActive;
-    public float toolEnergy;
-    
-    // Camera state
-    public Vector2 cameraPosition;
-    public Rect cameraViewport;
-    
-    // Flow state (for context and replay)
-    public float currentDivergence;
-    public Vector2 meanVelocity;
-    public Vector2[] agentPositions; // Snapshot of agent positions
-    
-    /// <summary>
-    /// Interpolate between two frames
-    /// </summary>
-    public static InputFrame Lerp(InputFrame a, InputFrame b, float t)
-    {
-        InputFrame result = new InputFrame
-        {
-            timestamp = Mathf.Lerp(a.timestamp, b.timestamp, t),
-            frameNumber = t < 0.5f ? a.frameNumber : b.frameNumber,
-            
-            cursorWorldPosition = Vector2.Lerp(a.cursorWorldPosition, b.cursorWorldPosition, t),
-            toolRadius = Mathf.Lerp(a.toolRadius, b.toolRadius, t),
-            toolStrength = Mathf.Lerp(a.toolStrength, b.toolStrength, t),
-            toolActive = t < 0.5f ? a.toolActive : b.toolActive,
-            toolEnergy = Mathf.Lerp(a.toolEnergy, b.toolEnergy, t),
-            
-            cameraPosition = Vector2.Lerp(a.cameraPosition, b.cameraPosition, t),
-            cameraViewport = new Rect(
-                Mathf.Lerp(a.cameraViewport.x, b.cameraViewport.x, t),
-                Mathf.Lerp(a.cameraViewport.y, b.cameraViewport.y, t),
-                Mathf.Lerp(a.cameraViewport.width, b.cameraViewport.width, t),
-                Mathf.Lerp(a.cameraViewport.height, b.cameraViewport.height, t)
-            ),
-            
-            currentDivergence = Mathf.Lerp(a.currentDivergence, b.currentDivergence, t),
-            meanVelocity = Vector2.Lerp(a.meanVelocity, b.meanVelocity, t)
-        };
-
-        // Interpolate agent positions for smooth playback
-        if (a.agentPositions != null && b.agentPositions != null && a.agentPositions.Length == b.agentPositions.Length)
-        {
-            result.agentPositions = new Vector2[a.agentPositions.Length];
-            for (int i = 0; i < a.agentPositions.Length; i++)
-            {
-                result.agentPositions[i] = Vector2.Lerp(a.agentPositions[i], b.agentPositions[i], t);
-            }
-        }
-        else if (a.agentPositions != null)
-        {
-             // Fallback if array sizes mismatch or one is missing
-             result.agentPositions = a.agentPositions;
-        }
-
-        return result;
-    }
-}
-
-/// <summary>
-/// Metadata about the recording session
-/// </summary>
-[System.Serializable]
-public class RecordingMetadata
-{
-    public float recordingStartTime;
-    public float recordingEndTime;
-    public float sessionDuration;
-    public int totalFrames;
-    
-    public Vector2 worldSize;
-    public int agentCount;
-    
-    public float totalToolActiveTime;
-    public int toolActivationCount;
+    public float   time;             // session time when recorded
+    public Vector2 worldPos;         // tool world position
+    public bool    held;             // LMB held (scan active)
+    public float   radius;           // scan radius at this moment
+    public float   strength;         // effective dampening strength
+    public float   convergenceScore; // convergence score at this moment (0–1)
 }

@@ -33,6 +33,7 @@ public class GameManager : MonoBehaviour
     public AmbientSoundscapeController soundscape;
     public GameStateUI gameStateUI;
     public DocumentaryController documentaryController;
+    public InputRecorder inputRecorder;
 
     [Header("Session Timing")]
     [Tooltip("Maximum session duration in seconds")]
@@ -220,6 +221,9 @@ public class GameManager : MonoBehaviour
 
         if (documentaryController == null)
             documentaryController = FindObjectOfType<DocumentaryController>();
+
+        if (inputRecorder == null && playerTool != null)
+            inputRecorder = playerTool.GetComponent<InputRecorder>();
     }
     
     void Update()
@@ -583,6 +587,10 @@ public class GameManager : MonoBehaviour
         SetState(GameState.Playing);
         OnSessionStart?.Invoke();
 
+        // Start recording player inputs for documentary replay (fresh session only)
+        if (!IsInDocumentaryReplay && inputRecorder != null)
+            inputRecorder.StartRecording();
+
         Debug.Log("[GameManager] Session started");
     }
     
@@ -666,6 +674,9 @@ public class GameManager : MonoBehaviour
 
         sessionActive = false;
         ClearSavedGame(); // session finished naturally — no save needed
+
+        // Stop recording (no-op during documentary replay since we don't start there)
+        if (inputRecorder != null) inputRecorder.StopRecording();
 
         // Calculate final score
         CalculateFinalScore();
@@ -814,6 +825,7 @@ public class GameManager : MonoBehaviour
     }
 
     public bool IsInDocumentaryReplay { get; set; } = false;
+    public InputRecorder InputRecorder => inputRecorder;
     
     /// <summary>
     /// Proceed to documentary phase — loads the Console scene with return flag set.

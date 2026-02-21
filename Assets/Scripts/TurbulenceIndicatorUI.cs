@@ -15,6 +15,7 @@ public class TurbulenceIndicatorUI : MonoBehaviour
     public CameraController cameraController;
     public FlowSimulation flowSimulation;
     public Camera mainCamera;
+    private GameManager gameManager;
     
     [Header("Edge Indicators")]
     [Tooltip("Distance from screen edge for indicators")]
@@ -69,6 +70,9 @@ public class TurbulenceIndicatorUI : MonoBehaviour
         
         if (mainCamera == null)
             mainCamera = Camera.main;
+
+        if (gameManager == null)
+            gameManager = FindObjectOfType<GameManager>();
     }
     
     void SetupCanvas()
@@ -376,6 +380,7 @@ public class TurbulenceIndicatorUI : MonoBehaviour
     {
         if (isPaused) return;
         if (GameManager.TerminalActive) return;
+        if (gameManager != null && gameManager.CurrentState == GameManager.GameState.Complete) return;
         InitializeStyles();
 
         // Draw mini-map radar

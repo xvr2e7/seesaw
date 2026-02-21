@@ -422,7 +422,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   laminarFlowSceneName: Laminar Flow
-  versionString: v1.5.2
+  versionString: v1.5.3.beta
   backgroundMusic: {fileID: 8300000, guid: 8718b861e4cc347bba4d902dc1018d74, type: 3}
   musicVolume: 0.35
   fadeInDuration: 2

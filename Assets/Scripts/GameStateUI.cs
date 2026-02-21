@@ -411,8 +411,11 @@ public class GameStateUI : MonoBehaviour
         float rowLabel    = 26f;
         float rowValue    = 76f;
         float rowBar      = divergenceBarHeight;
-        float padBottom   = 10f;
-        float panelHeight = padTop + rowLabel + rowValue + rowBar + padBottom;
+        float rowSep      = 12f;  // gap between divergence bar and energy row
+        float rowELabel   = 20f;
+        float rowEBar     = divergenceBarHeight;
+        float padBottom   = 12f;
+        float panelHeight = padTop + rowLabel + rowValue + rowBar + rowSep + rowELabel + rowEBar + padBottom;
 
         // Panel background
         GUI.color = panelBackgroundColor;
@@ -448,11 +451,75 @@ public class GameStateUI : MonoBehaviour
         GUI.Label(new Rect(contentX, currentY, barWidth, rowValue), $"{divergenceValue:F2}", valueStyle);
         currentY += rowValue;
 
-        // Row 3: progress bar
+        // Row 3: divergence progress bar
         GUI.color = barBackgroundColor;
         GUI.DrawTexture(new Rect(contentX, currentY, barWidth, rowBar), whiteTexture);
         GUI.color = fillColor;
         GUI.DrawTexture(new Rect(contentX, currentY, barWidth * fillRatio, rowBar), whiteTexture);
+        GUI.color = Color.white;
+        currentY += rowBar + rowSep;
+
+        // ── Energy row ──────────────────────────────────────────────────────
+        float energyRatio = 1f;
+        bool  isDepleted  = false;
+        if (playerTool != null && playerTool.energySystem != null)
+        {
+            energyRatio = playerTool.energySystem.EnergyRatio;
+            isDepleted  = playerTool.energySystem.IsDepleted;
+        }
+
+        // Small "SCAN ENERGY" label — dimmer than the divergence label
+        Color prevLabelColor = labelStyle.normal.textColor;
+        TextAnchor prevAlign = labelStyle.alignment;
+        int prevSize         = labelStyle.fontSize;
+        labelStyle.fontSize  = 13;
+
+        labelStyle.normal.textColor = new Color(0.38f, 0.40f, 0.44f, 0.70f);
+        labelStyle.alignment        = TextAnchor.MiddleLeft;
+        GUI.Label(new Rect(contentX, currentY, barWidth * 0.6f, rowELabel), "SCAN ENERGY", labelStyle);
+
+        // Ratio text right-aligned — shows live percentage
+        string ratioText = isDepleted ? "OFFLINE" : $"{Mathf.RoundToInt(energyRatio * 100f)}%";
+        Color ratioColor = isDepleted
+            ? new Color(0.65f, 0.28f, 0.14f, 0.85f)
+            : Color.Lerp(new Color(0.50f, 0.55f, 0.62f, 0.70f),
+                         new Color(0.65f, 0.42f, 0.18f, 0.80f),
+                         1f - energyRatio);
+        labelStyle.normal.textColor = ratioColor;
+        labelStyle.alignment        = TextAnchor.MiddleRight;
+        GUI.Label(new Rect(contentX, currentY, barWidth, rowELabel), ratioText, labelStyle);
+
+        // Restore labelStyle
+        labelStyle.alignment        = prevAlign;
+        labelStyle.normal.textColor = prevLabelColor;
+        labelStyle.fontSize         = prevSize;
+        currentY += rowELabel;
+
+        // Energy fill bar — color mirrors the dot-grid palette
+        Color energyFill;
+        if (isDepleted || energyRatio < 0.2f)
+            energyFill = new Color(0.55f, 0.18f, 0.12f, 0.80f);   // dark red
+        else if (energyRatio < 0.5f)
+            energyFill = Color.Lerp(new Color(0.65f, 0.30f, 0.14f, 0.80f),
+                                    new Color(0.72f, 0.52f, 0.18f, 0.80f),
+                                    (energyRatio - 0.2f) / 0.3f);  // red-orange → amber
+        else
+            energyFill = Color.Lerp(new Color(0.72f, 0.52f, 0.18f, 0.80f),
+                                    new Color(0.42f, 0.52f, 0.66f, 0.80f),
+                                    (energyRatio - 0.5f) / 0.5f);  // amber → cool blue
+
+        GUI.color = barBackgroundColor;
+        GUI.DrawTexture(new Rect(contentX, currentY, barWidth, rowEBar), whiteTexture);
+
+        if (!isDepleted)
+        {
+            // Flicker near depletion
+            float flicker = energyRatio < 0.2f
+                ? 0.6f + 0.4f * Mathf.Abs(Mathf.Sin(Time.time * 20f))
+                : 1f;
+            GUI.color = new Color(energyFill.r, energyFill.g, energyFill.b, energyFill.a * flicker);
+            GUI.DrawTexture(new Rect(contentX, currentY, barWidth * energyRatio, rowEBar), whiteTexture);
+        }
         GUI.color = Color.white;
     }
     

@@ -96,6 +96,7 @@ public class SamplingGrid : MonoBehaviour
     private bool isActive = false;
     private float energyRatio = 1f;
     private int _activeToolIndex = 0;   // 0=Scan, 1=Pulse, 2=Lock
+    private bool _isPaused = false;
 
     // ── Outer box rendering ────────────────────────────────────────────────────
     private LineRenderer[] boxLines;
@@ -301,12 +302,16 @@ public class SamplingGrid : MonoBehaviour
     }
 
     // ──────────────────────────────────────────────────────────────────────────
+    public void SetPaused(bool paused) { _isPaused = paused; }
+
     void Update()
     {
+        if (_isPaused) return;
         UpdateWorldPosition();
         UpdateBoundingBoxVisuals();
         UpdateSamplePositions();
         UpdateClusterSubBoxes();
+        UpdateDepletedPrompt();
     }
 
     void UpdateWorldPosition()
@@ -367,20 +372,35 @@ public class SamplingGrid : MonoBehaviour
                 _sampleDots[i].SetActive(false);
             return;
         }
-        else if (energyRatio < 0.3f)
+        else if (energyRatio < 0.2f)
         {
-            // Low energy: amber-brown, noticeably dim
-            dotColor = new Color(0.55f, 0.40f, 0.22f, 1f);
-            dotAlpha = sampleDotAlpha * Mathf.Lerp(0.35f, 0.55f, energyRatio / 0.3f);
+            // Critical: washed-out dark red — tool is almost gone
+            float t  = energyRatio / 0.2f; // 0=empty, 1=20%
+            dotColor = Color.Lerp(new Color(0.55f, 0.18f, 0.12f, 1f),   // deep red
+                                  new Color(0.65f, 0.30f, 0.14f, 1f),   // red-orange
+                                  t);
+            // Flicker: rapid stutter as it drains toward zero
+            float flicker = 0.7f + 0.3f * Mathf.Sin(Time.time * 22f * (1f - t));
+            dotAlpha = sampleDotAlpha * Mathf.Lerp(0.28f, 0.55f, t) * flicker;
+        }
+        else if (energyRatio < 0.5f)
+        {
+            // Low: amber-orange, noticeably dimmer
+            float t  = (energyRatio - 0.2f) / 0.3f; // 0=20%, 1=50%
+            dotColor = Color.Lerp(new Color(0.65f, 0.30f, 0.14f, 1f),   // red-orange
+                                  new Color(0.72f, 0.52f, 0.18f, 1f),   // amber
+                                  t);
+            dotAlpha = Mathf.Lerp(sampleDotAlpha * 0.55f, sampleDotAlpha * 0.75f, t);
         }
         else
         {
-            // Full → draining: cool blue-gray fading to amber
-            float t  = 1f - energyRatio; // 0 = full, 1 = just entered low zone
-            Color fullColor  = new Color(0.42f, 0.46f, 0.52f, 1f); // cool blue-gray
-            Color drainColor = new Color(0.60f, 0.46f, 0.26f, 1f); // amber
-            dotColor = Color.Lerp(fullColor, drainColor, t);
-            dotAlpha = Mathf.Lerp(sampleDotAlpha, sampleDotAlpha * 0.6f, t);
+            // Full → draining: cool blue-white fading decisively to amber
+            float t  = 1f - energyRatio; // 0=full, 1=50%
+            float tN = t * 2f;           // remap [0.5..1] to [0..1]
+            Color fullColor  = new Color(0.55f, 0.62f, 0.72f, 1f); // clear cool blue
+            Color drainColor = new Color(0.72f, 0.52f, 0.18f, 1f); // amber
+            dotColor = Color.Lerp(fullColor, drainColor, tN);
+            dotAlpha = Mathf.Lerp(sampleDotAlpha * 1.2f, sampleDotAlpha * 0.75f, tN);
         }
 
         dotColor.a = dotAlpha;
@@ -525,12 +545,61 @@ public class SamplingGrid : MonoBehaviour
         lr.endColor    = color;
     }
 
+    // ── Wasted-energy prompt state ────────────────────────────────────────────
+    private GUIStyle _depletedStyle;
+    private float    _depletedPromptAlpha = 0f;
+
+    private bool _holdingWhileDepleted = false;
+
+    /// <summary>True when the player is holding LMB but energy is exhausted.</summary>
+    public void SetHoldingWhileDepleted(bool holding)
+    {
+        _holdingWhileDepleted = holding;
+    }
+
+    void UpdateDepletedPrompt()
+    {
+        bool showPrompt = _holdingWhileDepleted && energyRatio <= 0f;
+        float target    = showPrompt ? 1f : 0f;
+        _depletedPromptAlpha = Mathf.MoveTowards(_depletedPromptAlpha, target, Time.deltaTime * 4f);
+    }
+
     // ── OnGUI: event name label + cluster count labels ────────────────────────
 
     void OnGUI()
     {
         if (mainCamera == null) return;
+        if (_isPaused) return;
         if (GameManager.TerminalActive) return;
+
+        // Wasted-energy warning — centered, below mid-screen
+        if (_depletedPromptAlpha > 0.005f)
+        {
+            if (_depletedStyle == null)
+            {
+                Font f = customFont != null ? customFont
+                    : Font.CreateDynamicFontFromOSFont(
+                          new string[] { "Space Mono", "Consolas", "Courier New", "Courier" }, 14);
+                _depletedStyle = new GUIStyle(GUI.skin.label)
+                {
+                    fontSize  = 14,
+                    alignment = TextAnchor.MiddleCenter,
+                    wordWrap  = false
+                };
+                if (f != null) _depletedStyle.font = f;
+            }
+
+            // Slow pulse while the player holds
+            float pulse = 0.75f + 0.25f * Mathf.Sin(Time.time * 3.5f);
+            Color c = new Color(0.65f, 0.30f, 0.14f, _depletedPromptAlpha * pulse);
+            _depletedStyle.normal.textColor = c;
+
+            float w = Screen.width;
+            float y = Screen.height * 0.62f;
+            GUI.Label(new Rect(0, y, w, 24f),
+                      "scanning is costly — release to recover",
+                      _depletedStyle);
+        }
 
         // Pattern label + guidance hint — shown when cursor overlaps an active event zone
         {

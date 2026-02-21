@@ -80,6 +80,11 @@ public class PlayerToolController : MonoBehaviour
     public delegate void ScanLineTrigger(Vector2 boxMin, Vector2 boxMax, float duration);
     public event ScanLineTrigger OnScanLineRequested;
 
+    // ── Replay / Recording ────────────────────────────────────────────────────
+    [HideInInspector]
+    public InputRecorder inputRecorder;   // auto-created in AutoCreateComponents
+    private bool _replayMode = false;
+
     // ── Runtime state ─────────────────────────────────────────────────────────
     private ToolType _activeTool = ToolType.Scan;
     private Vector2  _worldPos;
@@ -160,6 +165,9 @@ public class PlayerToolController : MonoBehaviour
                 turbulenceClassifier.scheduler = scheduler;
         }
 
+        if (inputRecorder == null)
+            inputRecorder = gameObject.AddComponent<InputRecorder>();
+
         // Link components
         if (samplingGrid != null)
         {
@@ -178,6 +186,14 @@ public class PlayerToolController : MonoBehaviour
 
         _firedThisFrame = false;
 
+        if (_replayMode)
+        {
+            // During replay, live input is suppressed — playback is driven externally.
+            // Still update world position so the sampling grid cursor shows correctly.
+            UpdateVisuals();
+            return;
+        }
+
         UpdateWorldPosition();
         UpdateTrackerRadius();
         HandleToolSwitch();
@@ -191,6 +207,25 @@ public class PlayerToolController : MonoBehaviour
         }
 
         UpdateVisuals();
+
+        // Record position + hold state at 10 Hz for documentary replay
+        if (inputRecorder != null)
+        {
+            if (_gameManager == null) _gameManager = FindObjectOfType<GameManager>();
+            if (_gameManager != null && _gameManager.IsPlaying)
+            {
+                float div         = flowSimulation != null ? flowSimulation.CurrentDivergence : 0f;
+                float convergence = Mathf.Clamp01(1f - div * 0.5f);
+                inputRecorder.TrySample(
+                    _gameManager.SessionTime,
+                    _worldPos,
+                    _scanActive,
+                    _currentRadius,
+                    _scanActive ? scanDampeningStrength : 0f,
+                    convergence
+                );
+            }
+        }
     }
 
     // ── Input helpers ─────────────────────────────────────────────────────────
@@ -294,7 +329,8 @@ public class PlayerToolController : MonoBehaviour
             ) * energySystem.GetEnergyStrengthModifier();
 
             // Route through FlowSimulation so scoring is properly reported
-            flowSimulation.DampenInRadius(_worldPos, _currentRadius, strength);
+            // Radius is the dot-grid half-span so suppression stays within the visible grid
+            flowSimulation.DampenInRadius(_worldPos, GetGridHalfSpan(), strength);
 
             // Request repeating scan-line sweep (DampeningParticleEffect ignores
             // this if a sweep is already in progress)
@@ -355,10 +391,24 @@ public class PlayerToolController : MonoBehaviour
         yield return new WaitForSeconds(lockFreezeDuration);
     }
 
+    /// <summary>
+    /// Half-span of the visible dot grid in world units — used to constrain
+    /// suppression to the area the player can actually see.
+    /// </summary>
+    float GetGridHalfSpan()
+    {
+        int gridSize = samplingGrid != null && performanceTracker != null
+            ? performanceTracker.CurrentGridSize
+            : 3;
+        float dotSpacing = samplingGrid != null ? samplingGrid.dotSpacing : 0.8f;
+        return (gridSize - 1) * 0.5f * dotSpacing;
+    }
+
     void RaiseScanLine(float duration)
     {
-        Vector2 boxMin = _worldPos - Vector2.one * _currentRadius;
-        Vector2 boxMax = _worldPos + Vector2.one * _currentRadius;
+        float span  = GetGridHalfSpan();
+        Vector2 boxMin = _worldPos - Vector2.one * span;
+        Vector2 boxMax = _worldPos + Vector2.one * span;
         OnScanLineRequested?.Invoke(boxMin, boxMax, duration);
     }
 
@@ -381,7 +431,15 @@ public class PlayerToolController : MonoBehaviour
         samplingGrid.SetActiveTool((int)_activeTool);
 
         if (energySystem != null)
+        {
             samplingGrid.SetEnergyRatio(energySystem.EnergyRatio);
+
+            // Inform grid when player holds LMB despite energy being gone
+            bool holdingWhileDepleted = Input.GetMouseButton(0)
+                && _activeTool == ToolType.Scan
+                && energySystem.IsDepleted;
+            samplingGrid.SetHoldingWhileDepleted(holdingWhileDepleted);
+        }
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
@@ -395,6 +453,36 @@ public class PlayerToolController : MonoBehaviour
             _scanActive       = false;
             _scanHoldDuration = 0f;
         }
+    }
+
+    /// <summary>
+    /// Enable/disable replay mode. In replay mode all live input is suppressed;
+    /// the caller drives the tool via PlaybackFrame().
+    /// </summary>
+    public void SetReplayMode(bool replay)
+    {
+        _replayMode = replay;
+        if (replay && _scanActive)
+        {
+            _scanActive       = false;
+            _scanHoldDuration = 0f;
+        }
+    }
+
+    /// <summary>
+    /// Apply a single recorded input frame during documentary playback.
+    /// Call once per Update() from DocumentaryController.
+    /// </summary>
+    public void PlaybackFrame(Vector2 worldPos, float radius, bool held, float strength)
+    {
+        _worldPos      = worldPos;
+        _currentRadius = radius;
+
+        if (samplingGrid != null)
+            samplingGrid.SetRadius(_currentRadius);
+
+        if (held && flowSimulation != null)
+            flowSimulation.DampenInRadius(worldPos, radius, strength * Time.deltaTime);
     }
 
     public ToolState GetToolState()

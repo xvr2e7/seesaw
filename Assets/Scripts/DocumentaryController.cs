@@ -3,6 +3,7 @@ using UnityEngine.Video;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using System.Collections;
+using System.Collections.Generic;
 
 /// <summary>
 /// Documentary phase controller.
@@ -53,6 +54,8 @@ public class DocumentaryController : MonoBehaviour
     // ── Replay camera ─────────────────────────────────────────────────────────
     private Camera        replayCamera;
     private RenderTexture replayRT;
+    private Vector2       _replayCamPos;      // current smoothed camera position
+    private Vector2       _replayCamTarget;   // target = recorded tool position
 
     // ── Video ─────────────────────────────────────────────────────────────────
     private VideoPlayer   videoPlayer;
@@ -63,6 +66,14 @@ public class DocumentaryController : MonoBehaviour
     // ── State ─────────────────────────────────────────────────────────────────
     private bool isActive             = false;
     private bool isReturningToConsole = false;
+
+    // ── Replay ────────────────────────────────────────────────────────────────
+    private IReadOnlyList<InputFrame> _replayFrames;
+    private int                       _replayIndex        = 0;
+    private float                     _replayLoopDuration = 0f;
+    private PlayerToolController      _replayTool;
+    private float                     _cachedFinalScore   = 0f;
+    private float                     _replayScore        = 0f; // interpolated score from recorded frames
 
     // Layout cached each frame for OnGUI label placement
     private float _panelX, _panelY, _panelW, _panelH;
@@ -213,14 +224,24 @@ public class DocumentaryController : MonoBehaviour
 
         DisablePlayerSystems();
 
-        // Mirror main camera settings onto replay camera
-        var mainCam = Camera.main;
-        if (mainCam != null)
+        // Cache the player's final score before RestartForDocumentaryReplay() clears it
+        _cachedFinalScore = gameManager != null ? gameManager.FinalScore : 0f;
+
+        // Load the recorded session for replay
+        _replayFrames       = null;
+        _replayIndex        = 0;
+        _replayLoopDuration = 0f;
+        _replayScore        = _cachedFinalScore;
+        _replayTool         = FindObjectOfType<PlayerToolController>();
+
+        if (gameManager != null && gameManager.InputRecorder != null
+            && gameManager.InputRecorder.HasRecording)
         {
-            replayCamera.CopyFrom(mainCam);
-            replayCamera.targetTexture   = replayRT;
-            replayCamera.clearFlags      = CameraClearFlags.SolidColor;
-            replayCamera.backgroundColor = Color.black;
+            _replayFrames       = gameManager.InputRecorder.Frames;
+            _replayLoopDuration = gameManager.InputRecorder.Duration;
+
+            if (_replayTool != null)
+                _replayTool.SetReplayMode(true);
         }
 
         // Restart simulation in looping replay mode
@@ -228,6 +249,31 @@ public class DocumentaryController : MonoBehaviour
         {
             gameManager.IsInDocumentaryReplay = true;
             gameManager.RestartForDocumentaryReplay();
+        }
+
+        // Configure the replay camera to match the main camera's projection.
+        // It will follow the recorded tool position each frame rather than
+        // copying the main camera's (now stationary) transform.
+        var mainCam = Camera.main;
+        if (mainCam != null)
+        {
+            replayCamera.orthographic        = true;
+            replayCamera.orthographicSize    = mainCam.orthographicSize;
+            replayCamera.nearClipPlane       = mainCam.nearClipPlane;
+            replayCamera.farClipPlane        = mainCam.farClipPlane;
+            replayCamera.backgroundColor     = Color.black;
+            replayCamera.clearFlags          = CameraClearFlags.SolidColor;
+            replayCamera.cullingMask         = mainCam.cullingMask;
+            replayCamera.targetTexture       = replayRT;
+
+            // Seed camera position at the first recorded tool position (or world center)
+            Vector2 startPos = (_replayFrames != null && _replayFrames.Count > 0)
+                ? _replayFrames[0].worldPos
+                : Vector2.zero;
+            _replayCamPos    = startPos;
+            _replayCamTarget = startPos;
+            replayCamera.transform.position = new Vector3(startPos.x, startPos.y,
+                                                          mainCam.transform.position.z);
         }
 
         // Wait for video to finish preparing
@@ -288,6 +334,21 @@ public class DocumentaryController : MonoBehaviour
 
         UpdateLayout();
 
+        // Drive replay inputs — this updates _replayCamTarget via TickReplay
+        if (_replayFrames != null && _replayTool != null && gameManager != null)
+            TickReplay(gameManager.SessionTime);
+
+        // Smooth-follow the recorded tool position, matching CameraController's behaviour
+        if (replayCamera != null)
+        {
+            const float followSpeed = 3f;
+            _replayCamPos = Vector2.Lerp(_replayCamPos, _replayCamTarget,
+                                         followSpeed * Time.deltaTime);
+
+            float z = replayCamera.transform.position.z;
+            replayCamera.transform.position = new Vector3(_replayCamPos.x, _replayCamPos.y, z);
+        }
+
         // Render the live simulation into the replay panel each frame
         if (replayCamera != null)
         {
@@ -295,6 +356,49 @@ public class DocumentaryController : MonoBehaviour
             replayCamera.Render();
             replayCamera.enabled = false;
         }
+    }
+
+    void TickReplay(float sessionTime)
+    {
+        if (_replayFrames == null || _replayFrames.Count == 0) return;
+
+        // Loop replay: map sessionTime onto [0, loopDuration)
+        float t = _replayLoopDuration > 0f
+            ? sessionTime % (_replayLoopDuration + 0.1f)
+            : sessionTime;
+
+        // Wrap index on loop restart
+        if (_replayIndex > 0 && t < _replayFrames[_replayIndex].time)
+            _replayIndex = 0;
+
+        // Advance index to stay current with t
+        while (_replayIndex < _replayFrames.Count - 1
+               && _replayFrames[_replayIndex + 1].time <= t)
+            _replayIndex++;
+
+        // No recorded data yet for this t (before first frame)
+        if (t < _replayFrames[0].time) return;
+
+        // Interpolate between adjacent frames
+        InputFrame a = _replayFrames[_replayIndex];
+        InputFrame b = (_replayIndex + 1 < _replayFrames.Count)
+            ? _replayFrames[_replayIndex + 1]
+            : a;
+
+        float frac = (b.time > a.time) ? (t - a.time) / (b.time - a.time) : 0f;
+
+        Vector2 pos      = Vector2.Lerp(a.worldPos, b.worldPos, frac);
+        float   radius   = Mathf.Lerp(a.radius, b.radius, frac);
+        bool    held     = a.held;       // binary — don't interpolate
+        float   strength = a.strength;
+
+        // Interpolate the recorded convergence score for display above the panel
+        _replayScore = Mathf.Lerp(a.convergenceScore, b.convergenceScore, frac);
+
+        // Drive the replay camera target so it follows the tool position
+        _replayCamTarget = pos;
+
+        _replayTool.PlaybackFrame(pos, radius, held, strength);
     }
 
     void UpdateLayout()
@@ -379,29 +483,28 @@ public class DocumentaryController : MonoBehaviour
         if (!isActive) return;
 
         // ── Convergence score above the left (replay) panel ───────────────────
-        if (_panelW > 0f && flowSimulation != null)
+        if (_panelW > 0f)
         {
             if (_scoreLabelStyle == null)
             {
                 Font f = Font.CreateDynamicFontFromOSFont(
-                    new string[] { "Space Mono", "Consolas", "Courier New", "Courier" }, 13);
+                    new string[] { "Space Mono", "Consolas", "Courier New", "Courier" }, 22);
                 _scoreLabelStyle = new GUIStyle(GUI.skin.label)
                 {
-                    fontSize  = 13,
+                    fontSize  = 22,
                     alignment = TextAnchor.UpperLeft,
                     wordWrap  = false
                 };
                 if (f != null) _scoreLabelStyle.font = f;
             }
 
-            float divergence  = flowSimulation.CurrentDivergence;
-            float convergence = Mathf.Clamp01(1f - divergence * 0.5f);
-            string label = $"MEAN CONVERGENCE   {convergence:F3}";
+            // Show the convergence score that was recorded at this moment of gameplay
+            string label = $"CONVERGENCE   {_replayScore * 100f:F1}%";
 
             // GUI Y is measured from top; panel is measured from bottom
-            float guiY = Screen.height - (_panelY + _panelH) - 22f;
+            float guiY = Screen.height - (_panelY + _panelH) - 30f;
             _scoreLabelStyle.normal.textColor = new Color(0.50f, 0.52f, 0.56f, 0.80f);
-            GUI.Label(new Rect(_panelX, guiY, _panelW, 20f), label, _scoreLabelStyle);
+            GUI.Label(new Rect(_panelX, guiY, _panelW, 28f), label, _scoreLabelStyle);
         }
 
         if (!showDebugInfo) return;
